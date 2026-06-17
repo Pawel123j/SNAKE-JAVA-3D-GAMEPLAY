@@ -1,9 +1,14 @@
 package com.pawel.snake3d;
 
 import javafx.animation.AnimationTimer;
+import javafx.animation.FadeTransition;
 import javafx.animation.KeyFrame;
+import javafx.animation.ParallelTransition;
+import javafx.animation.PauseTransition;
+import javafx.animation.ScaleTransition;
 import javafx.animation.Timeline;
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.AmbientLight;
@@ -39,8 +44,13 @@ import java.util.Random;
  *
  * <p>This class is deliberately a thin view layer: it owns the camera, lights,
  * arena and HUD, and on every tick it redraws the scene from the immutable state
- * exposed by {@link GameState}. All game rules live in {@link GameState}, and the
- * best score is persisted by {@link HighScoreStore}.
+ * exposed by {@link GameState}. All game rules live in {@link GameState}, the
+ * difficulty presets in {@link Difficulty}, and best scores are persisted per
+ * difficulty by {@link HighScoreStore}.
+ *
+ * <p>Setting the system property {@code snake.autoCloseMillis} makes the window
+ * close itself after the given delay; this powers the headless smoke test used in
+ * CI to verify the application actually starts and renders.
  */
 public class Snake3DApp extends Application {
 
@@ -49,10 +59,6 @@ public class Snake3DApp extends Application {
     private static final double FLOOR_THICKNESS = 20;
     private static final double SEGMENT_SIZE = 30;
     private static final double WALL_HEIGHT = 36;
-
-    private static final double MIN_TICK_MS = 78;
-    private static final double BASE_TICK_MS = 220;
-    private static final double TICK_ACCELERATION = 7.5;
 
     private final Random random = new Random();
     private final GameState game = new GameState(GRID_SIZE);
@@ -66,6 +72,7 @@ public class Snake3DApp extends Application {
     private final Group arenaGroup = new Group();
     private final Group snakeGroup = new Group();
     private final Group foodGroup = new Group();
+    private final Group effectGroup = new Group();
     private final Group decoGroup = new Group();
 
     private final PerspectiveCamera camera = new PerspectiveCamera(true);
@@ -82,8 +89,9 @@ public class Snake3DApp extends Application {
     private final Label scoreValue = new Label("0");
     private final Label bestValue = new Label("0");
     private final Label speedValue = new Label("1");
+    private final Label modeValue = new Label("Normalny");
     private final Label centerTitle = new Label("SNAKE 3D");
-    private final Label centerSubtitle = new Label("SPACE — start  •  WASD / strzałki — ruch  •  P — pauza");
+    private final Label centerSubtitle = new Label("");
 
     private Sphere foodOrb;
     private PointLight foodLight;
@@ -95,7 +103,7 @@ public class Snake3DApp extends Application {
 
     @Override
     public void start(Stage stage) {
-        bestScore = highScoreStore.load();
+        bestScore = highScoreStore.load(game.difficulty().name());
 
         buildWorld();
         renderSnake();
@@ -125,6 +133,7 @@ public class Snake3DApp extends Application {
         stage.show();
 
         renderLoop.start();
+        configureAutoClose();
     }
 
     @Override
@@ -138,12 +147,35 @@ public class Snake3DApp extends Application {
         persistBestScore();
     }
 
+    /**
+     * When {@code -Dsnake.autoCloseMillis=<n>} is set, schedules a clean shutdown
+     * after {@code n} milliseconds. Used by the headless smoke test to confirm
+     * the app starts and renders without crashing.
+     */
+    private void configureAutoClose() {
+        String value = System.getProperty("snake.autoCloseMillis");
+        if (value == null) {
+            return;
+        }
+        try {
+            long millis = Long.parseLong(value.trim());
+            PauseTransition delay = new PauseTransition(Duration.millis(millis));
+            delay.setOnFinished(e -> {
+                System.out.println("[snake] smoke test OK — application rendered, closing after " + millis + " ms");
+                Platform.exit();
+            });
+            delay.play();
+        } catch (NumberFormatException ignored) {
+            // Ignore an unparseable value and keep running normally.
+        }
+    }
+
     private void buildWorld() {
         world.getTransforms().addAll(worldRotateY, worldFloat);
         buildArena();
         buildDecorations();
         buildLights();
-        world.getChildren().addAll(arenaGroup, snakeGroup, foodGroup, decoGroup);
+        world.getChildren().addAll(arenaGroup, snakeGroup, foodGroup, effectGroup, decoGroup);
     }
 
     private void buildArena() {
@@ -243,7 +275,8 @@ public class Snake3DApp extends Application {
         HBox hud = new HBox(18,
                 statCard("SCORE", scoreValue),
                 statCard("BEST", bestValue),
-                statCard("SPEED", speedValue)
+                statCard("SPEED", speedValue),
+                statCard("MODE", modeValue)
         );
         hud.setAlignment(Pos.TOP_LEFT);
 
@@ -251,7 +284,7 @@ public class Snake3DApp extends Application {
         topLeft.setAlignment(Pos.TOP_LEFT);
         topLeft.setPadding(new Insets(24));
 
-        Label controls = hudLabel("WASD / STRZAŁKI • SPACE • P", 14, false, "#a9bad3");
+        Label controls = hudLabel("WASD / STRZAŁKI • SPACE • P • 1/2/3", 14, false, "#a9bad3");
         controls.setStyle(controls.getStyle() +
                 "-fx-background-color: rgba(12,18,30,0.54);" +
                 "-fx-border-color: rgba(145,205,255,0.22);" +
@@ -270,7 +303,7 @@ public class Snake3DApp extends Application {
 
         VBox centerBox = new VBox(14, centerTitle, centerSubtitle);
         centerBox.setAlignment(Pos.CENTER);
-        centerBox.setMaxWidth(700);
+        centerBox.setMaxWidth(740);
         centerBox.setPadding(new Insets(26, 34, 26, 34));
         centerBox.setStyle(
                 "-fx-background-color: rgba(10, 16, 28, 0.74);" +
@@ -293,12 +326,12 @@ public class Snake3DApp extends Application {
 
     private VBox statCard(String name, Label valueLabel) {
         Label nameLabel = hudLabel(name, 12, true, "#90a8c8");
-        valueLabel.setFont(Font.font("Segoe UI", FontWeight.EXTRA_BOLD, 24));
+        valueLabel.setFont(Font.font("Segoe UI", FontWeight.EXTRA_BOLD, 22));
         valueLabel.setTextFill(Color.web("#ffffff"));
 
         VBox box = new VBox(6, nameLabel, valueLabel);
         box.setPadding(new Insets(14, 18, 14, 18));
-        box.setPrefWidth(140);
+        box.setPrefWidth(130);
         box.setStyle(
                 "-fx-background-color: rgba(14, 22, 37, 0.72);" +
                 "-fx-border-color: rgba(115, 190, 255, 0.20);" +
@@ -337,6 +370,12 @@ public class Snake3DApp extends Application {
                 return;
             }
 
+            Difficulty chosen = difficultyFor(code);
+            if (chosen != null) {
+                selectDifficulty(chosen);
+                return;
+            }
+
             Direction newDirection = directionFor(code);
             if (newDirection != null) {
                 game.setDirection(newDirection);
@@ -346,6 +385,15 @@ public class Snake3DApp extends Application {
                 }
             }
         });
+    }
+
+    private Difficulty difficultyFor(KeyCode code) {
+        return switch (code) {
+            case DIGIT1, NUMPAD1 -> Difficulty.EASY;
+            case DIGIT2, NUMPAD2 -> Difficulty.NORMAL;
+            case DIGIT3, NUMPAD3 -> Difficulty.HARD;
+            default -> null;
+        };
     }
 
     private Direction directionFor(KeyCode code) {
@@ -358,10 +406,25 @@ public class Snake3DApp extends Application {
         };
     }
 
+    /** Switches difficulty, but only while at the menu or on the game-over screen. */
+    private void selectDifficulty(Difficulty difficulty) {
+        if (started && !game.isGameOver()) {
+            return;
+        }
+        if (difficulty == game.difficulty()) {
+            return;
+        }
+        game.setDifficulty(difficulty);
+        bestScore = highScoreStore.load(difficulty.name());
+        updateHud();
+        updateCenterMessage();
+    }
+
     private void startNewGame() {
         game.reset();
         started = true;
         paused = false;
+        effectGroup.getChildren().clear();
         rebuildGameLoop();
         renderSnake();
         renderFood();
@@ -426,8 +489,7 @@ public class Snake3DApp extends Application {
     }
 
     private double currentTickMs() {
-        int growth = Math.max(0, game.length() - 4);
-        return Math.max(MIN_TICK_MS, BASE_TICK_MS - growth * TICK_ACCELERATION);
+        return game.difficulty().tickMillisFor(game.length());
     }
 
     private void stepGame() {
@@ -440,6 +502,7 @@ public class Snake3DApp extends Application {
         switch (result) {
             case ATE -> {
                 bestScore = Math.max(bestScore, game.score());
+                spawnEatEffect(game.head());
                 rebuildGameLoop();
                 gameLoop.play();
             }
@@ -461,7 +524,30 @@ public class Snake3DApp extends Application {
     }
 
     private void persistBestScore() {
-        highScoreStore.save(bestScore);
+        highScoreStore.save(game.difficulty().name(), bestScore);
+    }
+
+    /** Plays a short expanding-and-fading burst at the cell where food was eaten. */
+    private void spawnEatEffect(Cell at) {
+        Sphere burst = new Sphere(10);
+        burst.setTranslateX(toWorld(at.x()));
+        burst.setTranslateY(-16);
+        burst.setTranslateZ(toWorld(at.z()));
+        burst.setMaterial(material("#ffd1e4", "#ffffff", 80));
+        effectGroup.getChildren().add(burst);
+
+        ScaleTransition grow = new ScaleTransition(Duration.millis(360), burst);
+        grow.setToX(4.2);
+        grow.setToY(4.2);
+        grow.setToZ(4.2);
+
+        FadeTransition fade = new FadeTransition(Duration.millis(360), burst);
+        fade.setFromValue(0.85);
+        fade.setToValue(0.0);
+
+        ParallelTransition pop = new ParallelTransition(grow, fade);
+        pop.setOnFinished(e -> effectGroup.getChildren().remove(burst));
+        pop.play();
     }
 
     private void renderSnake() {
@@ -535,11 +621,13 @@ public class Snake3DApp extends Application {
         scoreValue.setText(String.valueOf(game.score()));
         bestValue.setText(String.valueOf(bestScore));
         speedValue.setText(String.valueOf(Math.max(1, (game.length() - 1) / 2)));
+        modeValue.setText(game.difficulty().displayName());
     }
 
     private void updateCenterMessage() {
         if (!started && !game.isGameOver()) {
-            showCenterMessage("SNAKE 3D", "SPACE — start  •  WASD / strzałki — ruch  •  P — pauza");
+            showCenterMessage("SNAKE 3D",
+                    "SPACE — start  •  1/2/3 — poziom (" + game.difficulty().displayName() + ")  •  WASD — ruch");
             return;
         }
 
@@ -549,7 +637,8 @@ public class Snake3DApp extends Application {
         }
 
         if (game.isGameOver()) {
-            showCenterMessage("GAME OVER", "Wynik: " + game.score() + "  •  SPACE / R — restart");
+            showCenterMessage("GAME OVER",
+                    "Wynik: " + game.score() + "  •  SPACE / R — restart  •  1/2/3 — zmień poziom");
             return;
         }
 

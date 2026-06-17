@@ -65,7 +65,28 @@ class GameStateTest {
 
         assertEquals(GameState.StepResult.ATE, result);
         assertEquals(5, game.length());
-        assertEquals(GameState.FOOD_SCORE, game.score());
+        assertEquals(game.scorePerFood(), game.score());
+    }
+
+    @Test
+    void harderDifficultyAwardsMorePointsPerFood() {
+        GameState easy = new GameState(GRID, Difficulty.EASY, new Random(1));
+        GameState hard = new GameState(GRID, Difficulty.HARD, new Random(1));
+
+        assertEquals(GameState.BASE_FOOD_SCORE * Difficulty.EASY.scoreMultiplier(), easy.scorePerFood());
+        assertEquals(GameState.BASE_FOOD_SCORE * Difficulty.HARD.scoreMultiplier(), hard.scorePerFood());
+        assertTrue(hard.scorePerFood() > easy.scorePerFood());
+    }
+
+    @Test
+    void setDifficultyTakesEffectAfterReset() {
+        GameState game = new GameState(GRID);
+        game.setDifficulty(Difficulty.HARD);
+
+        assertEquals(Difficulty.HARD, game.difficulty());
+
+        game.reset();
+        assertEquals(Difficulty.HARD, game.difficulty());
     }
 
     @Test
@@ -126,7 +147,7 @@ class GameStateTest {
 
     @Test
     void foodNeverSpawnsOnTheSnake() {
-        GameState game = new GameState(GRID, new Random(42));
+        GameState game = new GameState(GRID, Difficulty.NORMAL, new Random(42));
 
         for (int i = 0; i < 500; i++) {
             Cell food = game.food();

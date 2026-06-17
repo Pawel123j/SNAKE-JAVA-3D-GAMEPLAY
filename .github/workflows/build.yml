@@ -22,5 +22,43 @@ jobs:
           java-version: "21"
           cache: maven
 
-      - name: Build and run tests
+      - name: Build, test and package
         run: mvn --batch-mode --no-transfer-progress verify
+
+      - name: Upload runnable JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: snake-3d-deluxe-jar
+          path: target/snake-3d-deluxe-*-shaded.jar
+          if-no-files-found: error
+
+  smoke-test:
+    name: Headless launch smoke test
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Install headless display and JavaFX runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb libgtk-3-0 libgl1 libxtst6
+
+      - name: Package runnable JAR
+        run: mvn --batch-mode --no-transfer-progress -DskipTests package
+
+      - name: Launch the game headlessly and verify it renders
+        run: |
+          xvfb-run -a -s "-screen 0 1280x900x24" \
+            java -Dsnake.autoCloseMillis=8000 -Dprism.order=sw \
+            -jar target/snake-3d-deluxe-1.0.0-shaded.jar

@@ -22,11 +22,11 @@ import java.util.Random;
  */
 public final class GameState {
 
-    /** Points awarded for each piece of food eaten. */
-    public static final int FOOD_SCORE = 10;
+    /** Base points awarded per food, before the difficulty multiplier. */
+    public static final int BASE_FOOD_SCORE = 10;
 
     /** Number of segments the snake starts with. */
-    private static final int INITIAL_LENGTH = 4;
+    static final int INITIAL_LENGTH = 4;
 
     /** Outcome of advancing the simulation by one {@link #step()}. */
     public enum StepResult {
@@ -44,6 +44,7 @@ public final class GameState {
     /** Head is the first element, tail is the last. */
     private final Deque<Cell> snake = new ArrayDeque<>();
 
+    private Difficulty difficulty;
     private Direction currentDirection;
     private Direction queuedDirection;
     private Cell food;
@@ -51,29 +52,31 @@ public final class GameState {
     private boolean gameOver;
 
     /**
-     * Creates a game on a {@code gridSize}×{@code gridSize} board with a
-     * non-deterministic random source.
+     * Creates a {@link Difficulty#NORMAL} game on a {@code gridSize}×{@code gridSize}
+     * board with a non-deterministic random source.
      *
      * @param gridSize the number of cells along each edge of the board
      */
     public GameState(int gridSize) {
-        this(gridSize, new Random());
+        this(gridSize, Difficulty.NORMAL, new Random());
     }
 
     /**
-     * Creates a game with an injected random source, primarily for tests that
-     * need reproducible food placement.
+     * Creates a game with an explicit difficulty and injected random source. The
+     * injectable {@link Random} keeps food placement reproducible in tests.
      *
-     * @param gridSize the number of cells along each edge of the board
-     * @param random   the source of randomness used to place food
+     * @param gridSize   the number of cells along each edge of the board
+     * @param difficulty the difficulty preset
+     * @param random     the source of randomness used to place food
      * @throws IllegalArgumentException if the board is too small to host the
      *                                  initial snake
      */
-    public GameState(int gridSize, Random random) {
+    public GameState(int gridSize, Difficulty difficulty, Random random) {
         if (gridSize < INITIAL_LENGTH + 2) {
             throw new IllegalArgumentException("gridSize must be at least " + (INITIAL_LENGTH + 2));
         }
         this.gridSize = gridSize;
+        this.difficulty = Objects.requireNonNull(difficulty, "difficulty");
         this.random = Objects.requireNonNull(random, "random");
         reset();
     }
@@ -132,7 +135,7 @@ public final class GameState {
 
         snake.addFirst(next);
         if (willGrow) {
-            score += FOOD_SCORE;
+            score += scorePerFood();
             spawnFood();
             return StepResult.ATE;
         }
@@ -183,6 +186,25 @@ public final class GameState {
     /** @return the number of cells along each edge of the board */
     public int gridSize() {
         return gridSize;
+    }
+
+    /** @return the active difficulty preset */
+    public Difficulty difficulty() {
+        return difficulty;
+    }
+
+    /**
+     * Selects the difficulty used from the next {@link #reset()} onwards.
+     *
+     * @param difficulty the preset to apply
+     */
+    public void setDifficulty(Difficulty difficulty) {
+        this.difficulty = Objects.requireNonNull(difficulty, "difficulty");
+    }
+
+    /** @return the number of points the next eaten food is worth */
+    public int scorePerFood() {
+        return BASE_FOOD_SCORE * difficulty.scoreMultiplier();
     }
 
     /** @return the snake's segments as an immutable list, head first */
