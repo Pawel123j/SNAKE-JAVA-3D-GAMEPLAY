@@ -6,13 +6,17 @@
     <groupId>com.pawel</groupId>
     <artifactId>snake-3d-deluxe</artifactId>
     <version>1.0.0</version>
+    <packaging>jar</packaging>
+
     <name>Snake 3D Deluxe</name>
-    <description>Premium 3D Snake game built with JavaFX 3D</description>
+    <description>A polished 3D Snake game built with JavaFX 3D.</description>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>21</maven.compiler.release>
         <javafx.version>21.0.2</javafx.version>
+        <junit.version>5.10.2</junit.version>
+        <main.class>com.pawel.snake3d.Snake3DApp</main.class>
     </properties>
 
     <dependencies>
@@ -26,24 +30,39 @@
             <artifactId>javafx-graphics</artifactId>
             <version>${javafx.version}</version>
         </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
+        <finalName>${project.artifactId}-${project.version}</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
+                <version>3.13.0</version>
                 <configuration>
                     <release>${maven.compiler.release}</release>
                 </configuration>
             </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+            </plugin>
+
             <plugin>
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>0.0.8</version>
                 <configuration>
-                    <mainClass>com.pawel.snake3d.Snake3DApp</mainClass>
+                    <mainClass>${main.class}</mainClass>
                 </configuration>
             </plugin>
         </plugins>

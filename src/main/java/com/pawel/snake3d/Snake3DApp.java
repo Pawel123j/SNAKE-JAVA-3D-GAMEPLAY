@@ -6,7 +6,13 @@ import javafx.animation.Timeline;
 import javafx.application.Application;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.*;
+import javafx.scene.AmbientLight;
+import javafx.scene.Group;
+import javafx.scene.PerspectiveCamera;
+import javafx.scene.PointLight;
+import javafx.scene.Scene;
+import javafx.scene.SceneAntialiasing;
+import javafx.scene.SubScene;
 import javafx.scene.control.Label;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.HBox;
@@ -25,10 +31,17 @@ import javafx.scene.transform.Translate;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Random;
 
+/**
+ * JavaFX entry point and renderer for the 3D Snake game.
+ *
+ * <p>This class is deliberately a thin view layer: it owns the camera, lights,
+ * arena and HUD, and on every tick it redraws the scene from the immutable state
+ * exposed by {@link GameState}. All game rules live in {@link GameState}, and the
+ * best score is persisted by {@link HighScoreStore}.
+ */
 public class Snake3DApp extends Application {
 
     private static final int GRID_SIZE = 18;
@@ -37,19 +50,16 @@ public class Snake3DApp extends Application {
     private static final double SEGMENT_SIZE = 30;
     private static final double WALL_HEIGHT = 36;
 
+    private static final double MIN_TICK_MS = 78;
+    private static final double BASE_TICK_MS = 220;
+    private static final double TICK_ACCELERATION = 7.5;
+
     private final Random random = new Random();
-    private final LinkedList<Cell> snake = new LinkedList<>();
-
-    private Direction currentDirection = Direction.RIGHT;
-    private Direction queuedDirection = Direction.RIGHT;
-
-    private Cell food;
+    private final GameState game = new GameState(GRID_SIZE);
+    private final HighScoreStore highScoreStore = new HighScoreStore();
 
     private boolean started = false;
     private boolean paused = false;
-    private boolean gameOver = false;
-
-    private int score = 0;
     private int bestScore = 0;
 
     private final Group world = new Group();
@@ -85,9 +95,9 @@ public class Snake3DApp extends Application {
 
     @Override
     public void start(Stage stage) {
+        bestScore = highScoreStore.load();
+
         buildWorld();
-        buildSnake();
-        spawnFood();
         renderSnake();
         renderFood();
 
@@ -115,6 +125,17 @@ public class Snake3DApp extends Application {
         stage.show();
 
         renderLoop.start();
+    }
+
+    @Override
+    public void stop() {
+        if (gameLoop != null) {
+            gameLoop.stop();
+        }
+        if (renderLoop != null) {
+            renderLoop.stop();
+        }
+        persistBestScore();
     }
 
     private void buildWorld() {
@@ -300,55 +321,63 @@ public class Snake3DApp extends Application {
             KeyCode code = event.getCode();
 
             if (code == KeyCode.SPACE) {
-                if (!started || gameOver) {
-                    restartGame();
-                    started = true;
-                    paused = false;
-                    gameOver = false;
-                    gameLoop.play();
-                    updateCenterMessage();
+                if (!started || game.isGameOver()) {
+                    startNewGame();
                 }
                 return;
             }
 
-            if (code == KeyCode.P && started && !gameOver) {
-                paused = !paused;
-                if (paused) {
-                    gameLoop.pause();
-                } else {
-                    gameLoop.play();
-                }
-                updateCenterMessage();
+            if (code == KeyCode.P && started && !game.isGameOver()) {
+                togglePause();
                 return;
             }
 
             if (code == KeyCode.R) {
-                restartGame();
-                started = true;
-                paused = false;
-                gameOver = false;
-                gameLoop.play();
-                updateCenterMessage();
+                startNewGame();
                 return;
             }
 
-            Direction newDirection = null;
-            if (code == KeyCode.W || code == KeyCode.UP) newDirection = Direction.UP;
-            if (code == KeyCode.S || code == KeyCode.DOWN) newDirection = Direction.DOWN;
-            if (code == KeyCode.A || code == KeyCode.LEFT) newDirection = Direction.LEFT;
-            if (code == KeyCode.D || code == KeyCode.RIGHT) newDirection = Direction.RIGHT;
-
-            if (newDirection != null && !isOpposite(currentDirection, newDirection)) {
-                queuedDirection = newDirection;
+            Direction newDirection = directionFor(code);
+            if (newDirection != null) {
+                game.setDirection(newDirection);
                 if (!started) {
-                    started = true;
-                    paused = false;
-                    gameOver = false;
-                    gameLoop.play();
-                    updateCenterMessage();
+                    startNewGame();
+                    game.setDirection(newDirection);
                 }
             }
         });
+    }
+
+    private Direction directionFor(KeyCode code) {
+        return switch (code) {
+            case W, UP -> Direction.UP;
+            case S, DOWN -> Direction.DOWN;
+            case A, LEFT -> Direction.LEFT;
+            case D, RIGHT -> Direction.RIGHT;
+            default -> null;
+        };
+    }
+
+    private void startNewGame() {
+        game.reset();
+        started = true;
+        paused = false;
+        rebuildGameLoop();
+        renderSnake();
+        renderFood();
+        updateHud();
+        updateCenterMessage();
+        gameLoop.play();
+    }
+
+    private void togglePause() {
+        paused = !paused;
+        if (paused) {
+            gameLoop.pause();
+        } else {
+            gameLoop.play();
+        }
+        updateCenterMessage();
     }
 
     private void setupLoops() {
@@ -367,6 +396,7 @@ public class Snake3DApp extends Application {
                 cameraPosition.setY(-290 + Math.sin(t * 0.9) * 10);
                 cameraPosition.setZ(-1020 + Math.cos(t * 0.55) * 18);
 
+                Cell food = game.food();
                 if (foodOrb != null) {
                     foodOrb.setTranslateY(-16 + Math.sin(t * 3.4) * 6.5);
                     foodOrb.setRotate(foodOrb.getRotate() + 1.7);
@@ -378,12 +408,10 @@ public class Snake3DApp extends Application {
                     foodLight.setTranslateZ(toWorld(food.z()));
                 }
 
-                if (!snake.isEmpty()) {
-                    Cell head = snake.getFirst();
-                    movingAccentLight.setTranslateX(toWorld(head.x()));
-                    movingAccentLight.setTranslateZ(toWorld(head.z()));
-                    movingAccentLight.setTranslateY(-55 + Math.cos(t * 4.0) * 8);
-                }
+                Cell head = game.head();
+                movingAccentLight.setTranslateX(toWorld(head.x()));
+                movingAccentLight.setTranslateZ(toWorld(head.z()));
+                movingAccentLight.setTranslateY(-55 + Math.cos(t * 4.0) * 8);
             }
         };
     }
@@ -398,76 +426,25 @@ public class Snake3DApp extends Application {
     }
 
     private double currentTickMs() {
-        int growth = Math.max(0, snake.size() - 4);
-        return Math.max(78, 220 - growth * 7.5);
-    }
-
-    private void restartGame() {
-        snake.clear();
-        snake.add(new Cell(7, 9));
-        snake.add(new Cell(6, 9));
-        snake.add(new Cell(5, 9));
-        snake.add(new Cell(4, 9));
-
-        currentDirection = Direction.RIGHT;
-        queuedDirection = Direction.RIGHT;
-        score = 0;
-        gameOver = false;
-        paused = false;
-        spawnFood();
-        renderSnake();
-        renderFood();
-        rebuildGameLoop();
-        updateHud();
-    }
-
-    private void buildSnake() {
-        if (snake.isEmpty()) {
-            snake.add(new Cell(7, 9));
-            snake.add(new Cell(6, 9));
-            snake.add(new Cell(5, 9));
-            snake.add(new Cell(4, 9));
-        }
+        int growth = Math.max(0, game.length() - 4);
+        return Math.max(MIN_TICK_MS, BASE_TICK_MS - growth * TICK_ACCELERATION);
     }
 
     private void stepGame() {
-        if (!started || paused || gameOver) {
+        if (!started || paused || game.isGameOver()) {
             return;
         }
 
-        if (!isOpposite(currentDirection, queuedDirection)) {
-            currentDirection = queuedDirection;
-        }
+        GameState.StepResult result = game.step();
 
-        Cell head = snake.getFirst();
-        Cell next = switch (currentDirection) {
-            case UP -> new Cell(head.x(), head.z() - 1);
-            case DOWN -> new Cell(head.x(), head.z() + 1);
-            case LEFT -> new Cell(head.x() - 1, head.z());
-            case RIGHT -> new Cell(head.x() + 1, head.z());
-        };
-
-        if (next.x() < 0 || next.x() >= GRID_SIZE || next.z() < 0 || next.z() >= GRID_SIZE) {
-            triggerGameOver();
-            return;
-        }
-
-        boolean grow = next.equals(food);
-        List<Cell> collisionList = grow ? snake : snake.subList(0, snake.size() - 1);
-        if (collisionList.contains(next)) {
-            triggerGameOver();
-            return;
-        }
-
-        snake.addFirst(next);
-        if (!grow) {
-            snake.removeLast();
-        } else {
-            score += 10;
-            bestScore = Math.max(bestScore, score);
-            spawnFood();
-            rebuildGameLoop();
-            gameLoop.play();
+        switch (result) {
+            case ATE -> {
+                bestScore = Math.max(bestScore, game.score());
+                rebuildGameLoop();
+                gameLoop.play();
+            }
+            case COLLISION -> triggerGameOver();
+            case MOVED -> { /* nothing extra to do */ }
         }
 
         renderSnake();
@@ -476,26 +453,24 @@ public class Snake3DApp extends Application {
     }
 
     private void triggerGameOver() {
-        gameOver = true;
-        bestScore = Math.max(bestScore, score);
+        bestScore = Math.max(bestScore, game.score());
+        persistBestScore();
         gameLoop.stop();
         updateHud();
         updateCenterMessage();
     }
 
-    private void spawnFood() {
-        Cell candidate;
-        do {
-            candidate = new Cell(random.nextInt(GRID_SIZE), random.nextInt(GRID_SIZE));
-        } while (snake.contains(candidate));
-        food = candidate;
+    private void persistBestScore() {
+        highScoreStore.save(bestScore);
     }
 
     private void renderSnake() {
         snakeGroup.getChildren().clear();
 
-        for (int i = snake.size() - 1; i >= 0; i--) {
-            Cell cell = snake.get(i);
+        List<Cell> segments = game.snake();
+        // Draw tail-to-head so the head and its aura render on top.
+        for (int i = segments.size() - 1; i >= 0; i--) {
+            Cell cell = segments.get(i);
             boolean isHead = i == 0;
             double size = isHead ? SEGMENT_SIZE + 3 : SEGMENT_SIZE;
 
@@ -516,7 +491,7 @@ public class Snake3DApp extends Application {
                 headAura.setOpacity(0.22);
                 snakeGroup.getChildren().add(headAura);
             } else {
-                double blend = 0.25 + (snake.size() - i) * 0.04;
+                double blend = 0.25 + (segments.size() - i) * 0.04;
                 cube.setMaterial(material(mixColor(blend), "#79ffe2", 90));
             }
 
@@ -526,6 +501,13 @@ public class Snake3DApp extends Application {
 
     private void renderFood() {
         foodGroup.getChildren().clear();
+        foodOrb = null;
+
+        Cell food = game.food();
+        if (food == null) {
+            foodLight = null;
+            return;
+        }
 
         foodOrb = new Sphere(14);
         foodOrb.setTranslateX(toWorld(food.x()));
@@ -550,38 +532,36 @@ public class Snake3DApp extends Application {
     }
 
     private void updateHud() {
-        scoreValue.setText(String.valueOf(score));
+        scoreValue.setText(String.valueOf(game.score()));
         bestValue.setText(String.valueOf(bestScore));
-        speedValue.setText(String.valueOf(Math.max(1, (snake.size() - 1) / 2)));
+        speedValue.setText(String.valueOf(Math.max(1, (game.length() - 1) / 2)));
     }
 
     private void updateCenterMessage() {
-        if (!started && !gameOver) {
-            centerTitle.setText("SNAKE 3D");
-            centerSubtitle.setText("SPACE — start  •  WASD / strzałki — ruch  •  P — pauza");
-            centerTitle.setVisible(true);
-            centerSubtitle.setVisible(true);
+        if (!started && !game.isGameOver()) {
+            showCenterMessage("SNAKE 3D", "SPACE — start  •  WASD / strzałki — ruch  •  P — pauza");
             return;
         }
 
         if (paused) {
-            centerTitle.setText("PAUZA");
-            centerSubtitle.setText("P — wróć do gry  •  R — restart");
-            centerTitle.setVisible(true);
-            centerSubtitle.setVisible(true);
+            showCenterMessage("PAUZA", "P — wróć do gry  •  R — restart");
             return;
         }
 
-        if (gameOver) {
-            centerTitle.setText("GAME OVER");
-            centerSubtitle.setText("Wynik: " + score + "  •  SPACE / R — restart");
-            centerTitle.setVisible(true);
-            centerSubtitle.setVisible(true);
+        if (game.isGameOver()) {
+            showCenterMessage("GAME OVER", "Wynik: " + game.score() + "  •  SPACE / R — restart");
             return;
         }
 
         centerTitle.setVisible(false);
         centerSubtitle.setVisible(false);
+    }
+
+    private void showCenterMessage(String title, String subtitle) {
+        centerTitle.setText(title);
+        centerSubtitle.setText(subtitle);
+        centerTitle.setVisible(true);
+        centerSubtitle.setVisible(true);
     }
 
     private Box wall(double w, double h, double d, double x, double y, double z) {
@@ -627,13 +607,6 @@ public class Snake3DApp extends Application {
 
     private double toWorld(int grid) {
         return (grid - (GRID_SIZE - 1) / 2.0) * TILE;
-    }
-
-    private boolean isOpposite(Direction a, Direction b) {
-        return (a == Direction.UP && b == Direction.DOWN)
-                || (a == Direction.DOWN && b == Direction.UP)
-                || (a == Direction.LEFT && b == Direction.RIGHT)
-                || (a == Direction.RIGHT && b == Direction.LEFT);
     }
 
     private double randomRange(double min, double max) {
