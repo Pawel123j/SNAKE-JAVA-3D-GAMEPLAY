@@ -63,6 +63,7 @@ public class Snake3DApp extends Application {
     private final Random random = new Random();
     private final GameState game = new GameState(GRID_SIZE);
     private final HighScoreStore highScoreStore = new HighScoreStore();
+    private final SoundManager sound = new SoundManager();
 
     private boolean started = false;
     private boolean paused = false;
@@ -90,6 +91,7 @@ public class Snake3DApp extends Application {
     private final Label bestValue = new Label("0");
     private final Label speedValue = new Label("1");
     private final Label modeValue = new Label("Normalny");
+    private final Label soundState = new Label("♪ dźwięk: wł.");
     private final Label centerTitle = new Label("SNAKE 3D");
     private final Label centerSubtitle = new Label("");
 
@@ -133,6 +135,7 @@ public class Snake3DApp extends Application {
         stage.show();
 
         renderLoop.start();
+        configureDemo();
         configureAutoClose();
     }
 
@@ -144,6 +147,7 @@ public class Snake3DApp extends Application {
         if (renderLoop != null) {
             renderLoop.stop();
         }
+        sound.shutdown();
         persistBestScore();
     }
 
@@ -168,6 +172,20 @@ public class Snake3DApp extends Application {
         } catch (NumberFormatException ignored) {
             // Ignore an unparseable value and keep running normally.
         }
+    }
+
+    /**
+     * When {@code -Dsnake.demo=true} is set, automatically starts a game shortly
+     * after the window opens. Used to capture an in-game screenshot or recording
+     * without manual input; the game then plays under normal rules.
+     */
+    private void configureDemo() {
+        if (!Boolean.getBoolean("snake.demo")) {
+            return;
+        }
+        PauseTransition warmup = new PauseTransition(Duration.millis(250));
+        warmup.setOnFinished(e -> startNewGame());
+        warmup.play();
     }
 
     private void buildWorld() {
@@ -284,7 +302,7 @@ public class Snake3DApp extends Application {
         topLeft.setAlignment(Pos.TOP_LEFT);
         topLeft.setPadding(new Insets(24));
 
-        Label controls = hudLabel("WASD / STRZAŁKI • SPACE • P • 1/2/3", 14, false, "#a9bad3");
+        Label controls = hudLabel("WASD / STRZAŁKI • SPACE • P • 1/2/3 • M", 14, false, "#a9bad3");
         controls.setStyle(controls.getStyle() +
                 "-fx-background-color: rgba(12,18,30,0.54);" +
                 "-fx-border-color: rgba(145,205,255,0.22);" +
@@ -292,7 +310,13 @@ public class Snake3DApp extends Application {
                 "-fx-border-radius: 18;" +
                 "-fx-padding: 10 16 10 16;");
 
-        StackPane topRight = new StackPane(controls);
+        soundState.setFont(Font.font("Segoe UI", FontWeight.MEDIUM, 12));
+        soundState.setTextFill(Color.web("#8fb0d6"));
+
+        VBox topRightBox = new VBox(8, controls, soundState);
+        topRightBox.setAlignment(Pos.TOP_RIGHT);
+
+        StackPane topRight = new StackPane(topRightBox);
         StackPane.setAlignment(topRight, Pos.TOP_RIGHT);
         StackPane.setMargin(topRight, new Insets(28));
 
@@ -370,6 +394,12 @@ public class Snake3DApp extends Application {
                 return;
             }
 
+            if (code == KeyCode.M) {
+                boolean muted = sound.toggleMute();
+                soundState.setText(muted ? "♪ dźwięk: wył." : "♪ dźwięk: wł.");
+                return;
+            }
+
             Difficulty chosen = difficultyFor(code);
             if (chosen != null) {
                 selectDifficulty(chosen);
@@ -430,6 +460,7 @@ public class Snake3DApp extends Application {
         renderFood();
         updateHud();
         updateCenterMessage();
+        sound.playStart();
         gameLoop.play();
     }
 
@@ -503,6 +534,7 @@ public class Snake3DApp extends Application {
             case ATE -> {
                 bestScore = Math.max(bestScore, game.score());
                 spawnEatEffect(game.head());
+                sound.playEat();
                 rebuildGameLoop();
                 gameLoop.play();
             }
@@ -519,6 +551,7 @@ public class Snake3DApp extends Application {
         bestScore = Math.max(bestScore, game.score());
         persistBestScore();
         gameLoop.stop();
+        sound.playGameOver();
         updateHud();
         updateCenterMessage();
     }

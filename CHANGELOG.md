@@ -13,6 +13,9 @@ a wersjonowanie na [SemVer](https://semver.org/lang/pl/).
 - Trwały najlepszy wynik zapamiętywany osobno dla każdego poziomu
   (`HighScoreStore`, plik `~/.snake3d/highscores.properties`).
 - Efekt „pop" przy zjedzeniu jedzenia oraz karta `MODE` w HUD.
+- Syntezowane efekty dźwiękowe (`SoundManager`, bez plików audio), wyciszane
+  klawiszem `M`, samo‑wyłączające się przy braku urządzenia audio.
+- Tryb demo (`-Dsnake.demo=true`) automatycznie startujący rozgrywkę.
 - Uruchamialny „fat JAR" (`maven-shade-plugin`) z osobnym `Launcher`.
 - Bezgłowy smoke‑test uruchomienia w CI (Xvfb) oraz publikacja artefaktu JAR.
 - Dokumentacja: `CONTRIBUTING.md`, `CHANGELOG.md`, `.editorconfig`, licencja MIT.

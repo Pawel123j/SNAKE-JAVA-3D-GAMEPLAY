@@ -17,6 +17,7 @@ bezgłowym smoke‑testem w CI.
 - futurystyczna arena: siatka, ściany, filary i dynamiczne światła,
 - animowane „food" z poświatą, własnym światłem i efektem „pop" przy zjedzeniu,
 - **trzy poziomy trudności** (Łatwy / Normalny / Trudny) — różna prędkość i punktacja,
+- **efekty dźwiękowe** syntezowane w locie (bez plików audio), z wyciszaniem (`M`),
 - czytelny HUD: wynik, najlepszy wynik, prędkość i aktywny poziom,
 - **trwały najlepszy wynik osobno dla każdego poziomu**,
 - start / pauza / restart oraz ekran *Game Over*,
@@ -31,6 +32,7 @@ bezgłowym smoke‑testem w CI.
 | `P`                        | pauza                          |
 | `R`                        | szybki restart                 |
 | `1` / `2` / `3`            | poziom: Łatwy / Normalny / Trudny |
+| `M`                        | wycisz / włącz dźwięk          |
 
 Poziom trudności można zmieniać w menu startowym oraz na ekranie *Game Over*.
 
@@ -64,6 +66,22 @@ java -jar target/snake-3d-deluxe-1.0.0-shaded.jar
 > Plik `*-shaded.jar` zawiera natywne biblioteki JavaFX dla platformy, na której
 > został zbudowany, więc do jego uruchomienia wystarczy samo JDK 21.
 
+### Flagi pomocnicze
+
+Grę można sterować właściwościami systemowymi `-D`, przydatnymi przy nagraniach
+i automatyzacji:
+
+| Właściwość                     | Działanie                                            |
+|--------------------------------|------------------------------------------------------|
+| `-Dsnake.demo=true`            | automatycznie startuje rozgrywkę po otwarciu okna    |
+| `-Dsnake.autoCloseMillis=<ms>` | zamyka aplikację po zadanym czasie (smoke‑test w CI) |
+
+> **Uwaga o 3D:** scena 3D wymaga sprzętowego OpenGL (GPU). Na maszynach bez
+> akceleracji (np. część kontenerów CI) JavaFX zgłasza
+> `ConditionalFeature.SCENE3D` i rysuje wyłącznie nakładkę 2D — sam start i
+> logika działają, ale arena 3D nie jest widoczna. Aby zrobić zrzut ekranu,
+> uruchom grę z `-Dsnake.demo=true` na komputerze z GPU.
+
 ## Testy
 
 Logika gry jest niezależna od JavaFX i pokryta testami JUnit 5:
@@ -89,6 +107,7 @@ Kod celowo oddziela symulację od prezentacji:
 | `Cell`            | niemutowalna pozycja na siatce z metodą `translate(Direction)`              |
 | `Direction`       | kierunki ruchu wraz z logiką przeciwnych zwrotów                            |
 | `HighScoreStore`  | trwały zapis/odczyt najlepszych wyników per poziom (`~/.snake3d/`)          |
+| `SoundManager`    | syntezowane efekty dźwiękowe; samo‑wyłączające się bez urządzenia audio     |
 | `Snake3DApp`      | warstwa JavaFX — kamera, światła, arena, HUD; renderuje stan `GameState`    |
 | `Launcher`        | punkt wejścia dla uruchamialnego JAR‑a                                       |
 
@@ -116,12 +135,14 @@ snake-3d-deluxe/
     │   ├── GameState.java        # silnik gry (logika)
     │   ├── Difficulty.java       # poziomy trudności
     │   ├── HighScoreStore.java   # trwałe najlepsze wyniki
+    │   ├── SoundManager.java     # syntezowane efekty dźwiękowe
     │   ├── Cell.java
     │   └── Direction.java
     └── test/java/com/pawel/snake3d/
         ├── GameStateTest.java
         ├── DifficultyTest.java
         ├── HighScoreStoreTest.java
+        ├── SoundManagerTest.java
         ├── DirectionTest.java
         └── CellTest.java
 ```
