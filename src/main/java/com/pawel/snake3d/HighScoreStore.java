@@ -78,8 +78,11 @@ public final class HighScoreStore {
         if (Files.exists(file)) {
             try (InputStream in = Files.newInputStream(file)) {
                 properties.load(in);
-            } catch (IOException ignored) {
-                // Treat an unreadable file as "no high scores yet".
+            } catch (IOException | RuntimeException ignored) {
+                // Treat an unreadable or structurally corrupt file (e.g. a
+                // malformed \\uXXXX escape, which makes Properties.load throw an
+                // unchecked IllegalArgumentException) as "no high scores yet".
+                return new Properties();
             }
         }
         return properties;

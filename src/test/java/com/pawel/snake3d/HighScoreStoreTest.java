@@ -46,4 +46,18 @@ class HighScoreStoreTest {
 
         assertEquals(0, store.load("NORMAL"));
     }
+
+    @Test
+    void structurallyCorruptFileDoesNotThrow(@TempDir Path dir) throws Exception {
+        // A malformed \\uXXXX escape makes Properties.load throw an unchecked
+        // IllegalArgumentException; the store must swallow it, not crash startup.
+        Path file = dir.resolve("highscores.properties");
+        Files.writeString(file, "NORMAL=\\uZZZZ\n");
+        HighScoreStore store = new HighScoreStore(file);
+
+        assertEquals(0, store.load("NORMAL"));
+        // And a subsequent save must still succeed, overwriting the bad file.
+        store.save("NORMAL", 123);
+        assertEquals(123, store.load("NORMAL"));
+    }
 }

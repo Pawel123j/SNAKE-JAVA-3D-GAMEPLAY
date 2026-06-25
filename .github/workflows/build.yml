@@ -59,6 +59,8 @@ jobs:
 
       - name: Launch the game headlessly and verify it renders
         run: |
+          jar=$(ls target/snake-3d-deluxe-*-shaded.jar | head -n1)
+          echo "Launching $jar"
           xvfb-run -a -s "-screen 0 1280x900x24" \
             java -Dsnake.autoCloseMillis=8000 -Dprism.order=sw \
-            -jar target/snake-3d-deluxe-1.0.0-shaded.jar
+            -jar "$jar"

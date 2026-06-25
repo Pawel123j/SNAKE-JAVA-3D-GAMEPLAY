@@ -63,8 +63,14 @@ mvn package
 java -jar target/snake-3d-deluxe-1.0.0-shaded.jar
 ```
 
-> Plik `*-shaded.jar` zawiera natywne biblioteki JavaFX dla platformy, na której
-> został zbudowany, więc do jego uruchomienia wystarczy samo JDK 21.
+> Plik `*-shaded.jar` zawiera natywne biblioteki JavaFX dla głównych
+> desktopowych platform: **Windows x86‑64, Linux x86‑64 i macOS Apple Silicon** —
+> ten sam plik uruchomisz na każdej z nich, wystarczy JDK 21.
+>
+> Natywki Intel‑ i Apple‑Silicon‑macOS mają identyczne nazwy plików, więc jeden
+> JAR może nieść tylko jedną z nich (wybraliśmy aarch64). Na Intel macOS, ARM
+> Linux czy 32‑bit użyj `mvn javafx:run` — sam dobierze odpowiednie biblioteki.
+> Lżejszą, per‑platformową alternatywą jest `jlink`/`jpackage`.
 
 ### Flagi pomocnicze
 

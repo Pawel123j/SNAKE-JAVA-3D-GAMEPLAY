@@ -31,6 +31,33 @@
             <version>${javafx.version}</version>
         </dependency>
 
+        <!-- Native JavaFX graphics libraries (prism, glass, font) for the main
+             desktop platforms, so the shaded JAR runs regardless of the build
+             host. Note: Intel and Apple Silicon macOS natives share identical
+             file names, so a single JAR can only carry one of them — we ship
+             Apple Silicon (aarch64), the modern default. Intel macOS, ARM Linux
+             and 32-bit users should run via `mvn javafx:run`, which fetches the
+             matching natives automatically. jlink/jpackage are the lighter,
+             per-platform alternative for distribution. -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-graphics</artifactId>
+            <version>${javafx.version}</version>
+            <classifier>win</classifier>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-graphics</artifactId>
+            <version>${javafx.version}</version>
+            <classifier>linux</classifier>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-graphics</artifactId>
+            <version>${javafx.version}</version>
+            <classifier>mac-aarch64</classifier>
+        </dependency>
+
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -66,8 +93,9 @@
                 </configuration>
             </plugin>
 
-            <!-- Builds a self-contained, double-clickable JAR:
-                 target/snake-3d-deluxe-1.0.0-shaded.jar -->
+            <!-- Builds a self-contained, double-clickable JAR for the main
+                 desktop platforms (Windows x86-64, Linux x86-64, macOS Apple
+                 Silicon): target/snake-3d-deluxe-1.0.0-shaded.jar -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
