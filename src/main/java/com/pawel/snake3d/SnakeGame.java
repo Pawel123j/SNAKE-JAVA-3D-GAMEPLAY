@@ -1,8 +1,10 @@
 package com.pawel.snake3d;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -26,6 +28,12 @@ public class SnakeGame {
     public static final int FOODS_PER_BONUS = 5;
     /** How many steps a bonus stays on the board before vanishing. */
     public static final int BONUS_LIFETIME = 30;
+    /** How many turns may be buffered, so fast corners are never dropped. */
+    public static final int MAX_QUEUED_TURNS = 2;
+    /** Eating again within this many steps keeps the combo streak alive. */
+    public static final int COMBO_WINDOW = 16;
+    /** Combo multiplier is capped at this value. */
+    public static final int COMBO_MAX = 5;
 
     /**
      * Strategy for choosing where the next food appears. Receives the list of
@@ -62,14 +70,17 @@ public class SnakeGame {
     private final LinkedList<Cell> snake = new LinkedList<>();
     private final Set<Cell> obstacles = new HashSet<>();
 
+    private final Deque<Direction> inputQueue = new ArrayDeque<>();
+
     private Difficulty difficulty = Difficulty.NORMAL;
     private GameMode mode = GameMode.CLASSIC;
     private Direction currentDirection;
-    private Direction queuedDirection;
     private Cell food;
     private Cell bonusFood;
     private int bonusTimer;
     private int applesEaten;
+    private int combo;
+    private int stepsSinceEat;
     private int score;
     private GameState state;
 
@@ -100,11 +111,13 @@ public class SnakeGame {
             snake.addLast(new Cell(headX - i, startRow));
         }
         currentDirection = Direction.RIGHT;
-        queuedDirection = Direction.RIGHT;
+        inputQueue.clear();
         score = 0;
         bonusFood = null;
         bonusTimer = 0;
         applesEaten = 0;
+        combo = 0;
+        stepsSinceEat = COMBO_WINDOW + 1;
         state = GameState.READY;
         obstacles.clear();
         if (mode == GameMode.OBSTACLES) {
@@ -146,16 +159,20 @@ public class SnakeGame {
     }
 
     /**
-     * Queues a turn for the next step. Reversing straight into the neck is
-     * ignored, and turns are dropped once the game has finished.
+     * Buffers a turn for an upcoming step. Up to {@link #MAX_QUEUED_TURNS} turns
+     * are remembered so fast corners aren't dropped; each turn is validated
+     * against the previously buffered one (or the current heading), so reversing
+     * into the neck and redundant presses are ignored.
      */
     public void setDirection(Direction direction) {
-        if (direction == null || state.isFinished()) {
+        if (direction == null || state.isFinished() || inputQueue.size() >= MAX_QUEUED_TURNS) {
             return;
         }
-        if (!currentDirection.isOpposite(direction)) {
-            queuedDirection = direction;
+        Direction reference = inputQueue.isEmpty() ? currentDirection : inputQueue.peekLast();
+        if (direction == reference || direction.isOpposite(reference)) {
+            return;
         }
+        inputQueue.addLast(direction);
     }
 
     /** Advances the simulation by one tick. */
@@ -164,12 +181,15 @@ public class SnakeGame {
             return StepResult.IGNORED;
         }
 
+        stepsSinceEat++;
+
         if (bonusFood != null && --bonusTimer <= 0) {
             bonusFood = null;
         }
 
-        if (!currentDirection.isOpposite(queuedDirection)) {
-            currentDirection = queuedDirection;
+        Direction nextDirection = inputQueue.pollFirst();
+        if (nextDirection != null && !currentDirection.isOpposite(nextDirection)) {
+            currentDirection = nextDirection;
         }
 
         Cell next = snake.getFirst().step(currentDirection);
@@ -198,7 +218,9 @@ public class SnakeGame {
         snake.addFirst(next);
 
         if (eatsApple) {
-            score += FOOD_SCORE;
+            combo = stepsSinceEat <= COMBO_WINDOW ? combo + 1 : 1;
+            stepsSinceEat = 0;
+            score += FOOD_SCORE * comboMultiplier();
             applesEaten++;
             spawnFood();
             maybeSpawnBonus();
@@ -327,6 +349,16 @@ public class SnakeGame {
         return score;
     }
 
+    /** @return the current combo streak length (number of consecutive eats). */
+    public int combo() {
+        return combo;
+    }
+
+    /** @return the active points multiplier in [1, {@link #COMBO_MAX}]. */
+    public int comboMultiplier() {
+        return Math.min(Math.max(combo, 1), COMBO_MAX);
+    }
+
     public GameState state() {
         return state;
     }
@@ -377,7 +409,7 @@ public class SnakeGame {
         snake.clear();
         snake.addAll(body);
         this.currentDirection = direction;
-        this.queuedDirection = direction;
+        this.inputQueue.clear();
         this.food = food;
         this.state = state;
     }
@@ -402,5 +434,11 @@ public class SnakeGame {
     /** Visible for testing — sets the mode without resetting the board. */
     void setModeForTest(GameMode mode) {
         this.mode = mode;
+    }
+
+    /** Visible for testing the combo multiplier. */
+    void setComboStateForTest(int combo, int stepsSinceEat) {
+        this.combo = combo;
+        this.stepsSinceEat = stepsSinceEat;
     }
 }

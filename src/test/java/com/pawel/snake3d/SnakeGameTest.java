@@ -294,6 +294,84 @@ class SnakeGameTest {
     }
 
     @Test
+    void bufferedTurnsApplyInOrder() {
+        SnakeGame game = newGame();
+        game.start();
+        Cell head = game.head();
+
+        game.setDirection(Direction.UP);   // valid vs RIGHT
+        game.setDirection(Direction.LEFT); // valid vs the buffered UP
+
+        game.step();
+        assertEquals(new Cell(head.x(), head.z() - 1), game.head());
+        game.step();
+        assertEquals(new Cell(head.x() - 1, head.z() - 1), game.head(),
+                "the second buffered turn should apply on the next step");
+    }
+
+    @Test
+    void inputBufferRejectsReverseAndRespectsCap() {
+        SnakeGame game = newGame();
+        game.start();
+        Cell head = game.head();
+
+        game.setDirection(Direction.UP);    // buffered
+        game.setDirection(Direction.DOWN);  // opposite of UP -> ignored
+        game.setDirection(Direction.LEFT);  // buffered (now full: [UP, LEFT])
+        game.setDirection(Direction.UP);    // buffer full -> ignored
+
+        game.step(); // UP
+        game.step(); // LEFT
+        game.step(); // nothing buffered -> keeps going LEFT
+        assertEquals(new Cell(head.x() - 2, head.z() - 1), game.head());
+    }
+
+    @Test
+    void comboMultipliesConsecutiveEats() {
+        SnakeGame game = newGame();
+        game.loadState(
+                List.of(new Cell(5, 5), new Cell(4, 5), new Cell(3, 5), new Cell(2, 5)),
+                Direction.RIGHT,
+                new Cell(6, 5),
+                GameState.RUNNING);
+        game.setComboStateForTest(2, 0); // eating again immediately -> streak grows to 3
+
+        assertEquals(SnakeGame.StepResult.ATE, game.step());
+        assertEquals(3, game.comboMultiplier());
+        assertEquals(SnakeGame.FOOD_SCORE * 3, game.score());
+    }
+
+    @Test
+    void comboResetsAfterWindow() {
+        SnakeGame game = newGame();
+        game.loadState(
+                List.of(new Cell(5, 5), new Cell(4, 5), new Cell(3, 5), new Cell(2, 5)),
+                Direction.RIGHT,
+                new Cell(6, 5),
+                GameState.RUNNING);
+        game.setComboStateForTest(4, SnakeGame.COMBO_WINDOW); // too slow -> streak breaks
+
+        assertEquals(SnakeGame.StepResult.ATE, game.step());
+        assertEquals(1, game.comboMultiplier());
+        assertEquals(SnakeGame.FOOD_SCORE, game.score());
+    }
+
+    @Test
+    void comboMultiplierIsCapped() {
+        SnakeGame game = newGame();
+        game.loadState(
+                List.of(new Cell(5, 5), new Cell(4, 5), new Cell(3, 5), new Cell(2, 5)),
+                Direction.RIGHT,
+                new Cell(6, 5),
+                GameState.RUNNING);
+        game.setComboStateForTest(SnakeGame.COMBO_MAX, 0);
+
+        assertEquals(SnakeGame.StepResult.ATE, game.step());
+        assertEquals(SnakeGame.COMBO_MAX, game.comboMultiplier());
+        assertEquals(SnakeGame.FOOD_SCORE * SnakeGame.COMBO_MAX, game.score());
+    }
+
+    @Test
     void switchingModeResetsTheGame() {
         SnakeGame game = newGame();
         game.start();

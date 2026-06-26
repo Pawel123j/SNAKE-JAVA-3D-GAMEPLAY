@@ -10,11 +10,14 @@ Elegancka gra Snake w prawdziwym 3D zrobiona w **Java + JavaFX 3D + Maven**.
 - światła i futurystyczna arena (filary, siatka, gwiazdy),
 - **płynny ruch węża** — segmenty interpolowane między klatkami,
 - animowany, świecący food oraz **złoty bonus** (więcej punktów, znika po chwili),
+- **mnożnik combo** — jedz pod rząd, a punkty rosną nawet ×5,
+- **bufor wejścia** — szybkie zakręty nie giną (płynne pokonywanie rogów),
 - **efekt cząsteczek** przy jedzeniu i **wstrząs ekranu** przy końcu gry,
 - **dźwięk** generowany w locie (jedzenie / bonus / koniec / wygrana),
-- elegancki HUD (wynik, rekord, prędkość, poziom, plansza),
+- elegancki HUD (wynik, rekord, combo, prędkość, poziom, plansza),
 - **3 poziomy trudności** (łatwy / normalny / trudny),
 - **3 tryby planszy** (klasyczny / zawijanie krawędzi / przeszkody),
+- **tablica top-5 wyników** pokazywana na ekranie startu i końca,
 - **zapisywane ustawienia** — poziom, tryb i dźwięk przeżywają restart gry,
 - **zapisywany rekord** — najlepszy wynik przeżywa zamknięcie gry,
 - **ekran wygranej** po wypełnieniu całej areny,
@@ -40,7 +43,8 @@ Elegancka gra Snake w prawdziwym 3D zrobiona w **Java + JavaFX 3D + Maven**.
 
 ### Punktacja
 
-- zwykły food: **+10** i wąż rośnie,
+- zwykły food: **+10 × mnożnik combo** i wąż rośnie,
+- **combo**: każde kolejne jabłko zjedzone szybko po poprzednim zwiększa mnożnik (do ×5); zbyt długa przerwa zeruje serię,
 - złoty bonus: **+50**, bez wzrostu — pojawia się co 5 zjedzonych jabłek i znika po chwili.
 
 ## Wymagania
@@ -99,6 +103,7 @@ a `Snake3DApp` zajmuje się wyłącznie renderowaniem i wejściem:
 | `Cell` | współrzędna na siatce (rekord) |
 | `Difficulty` | presety prędkości (EASY / NORMAL / HARD) |
 | `HighScoreStore` | zapis/odczyt rekordu z `~/.snake3d/highscore.txt` |
+| `Leaderboard` | top-5 wyników w `~/.snake3d/scores.txt` |
 | `Settings` | zapis poziomu, trybu i dźwięku w `~/.snake3d/settings.properties` |
 | `SoundManager` | syntezowane efekty dźwiękowe (bez plików audio) |
 | `Snake3DApp` | warstwa widoku JavaFX (renderowanie, HUD, input) |
@@ -124,6 +129,7 @@ snake-3d-deluxe/
     │   ├── GameMode.java
     │   ├── Difficulty.java
     │   ├── HighScoreStore.java
+    │   ├── Leaderboard.java
     │   ├── Settings.java
     │   ├── SoundManager.java
     │   ├── Cell.java
@@ -132,6 +138,7 @@ snake-3d-deluxe/
         ├── SnakeGameTest.java
         ├── DirectionTest.java
         ├── HighScoreStoreTest.java
+        ├── LeaderboardTest.java
         ├── SettingsTest.java
         └── SmokeTest.java
 ```
