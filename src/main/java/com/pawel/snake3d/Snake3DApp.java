@@ -49,6 +49,8 @@ public class Snake3DApp extends Application {
 
     private final SnakeGame game = new SnakeGame(GRID_SIZE, random);
     private final HighScoreStore highScoreStore = new HighScoreStore();
+    private final Leaderboard leaderboard = new Leaderboard();
+    private final Settings settings = new Settings();
     private final SoundManager sound = new SoundManager();
     private int bestScore;
 
@@ -58,6 +60,7 @@ public class Snake3DApp extends Application {
     private final Group foodGroup = new Group();
     private final Group decoGroup = new Group();
     private final Group particleGroup = new Group();
+    private final Group obstacleGroup = new Group();
 
     /** Reused snake segment nodes — grown on demand, never recreated per frame. */
     private final List<Box> segmentPool = new ArrayList<>();
@@ -87,9 +90,12 @@ public class Snake3DApp extends Application {
     private final Label scoreValue = new Label("0");
     private final Label bestValue = new Label("0");
     private final Label speedValue = new Label("1");
-    private final Label modeValue = new Label(Difficulty.NORMAL.label());
+    private final Label difficultyValue = new Label(Difficulty.NORMAL.label());
+    private final Label boardValue = new Label(GameMode.CLASSIC.label());
+    private final Label comboValue = new Label("x1");
     private final Label centerTitle = new Label("SNAKE 3D");
     private final Label centerSubtitle = new Label("SPACE — start  •  WASD / strzałki — ruch  •  P — pauza");
+    private final Label centerScores = new Label();
 
     private Sphere foodOrb;
     private Sphere foodHalo;
@@ -105,9 +111,13 @@ public class Snake3DApp extends Application {
 
     @Override
     public void start(Stage stage) {
-        bestScore = highScoreStore.load();
+        bestScore = Math.max(highScoreStore.load(), leaderboard.best());
+        game.setDifficulty(settings.difficulty());
+        game.setMode(settings.mode());
+        sound.setEnabled(settings.isSoundEnabled());
 
         buildWorld();
+        renderObstacles();
         resetInterpolation();
         syncSnakeNodes();
         positionFood();
@@ -145,7 +155,20 @@ public class Snake3DApp extends Application {
         buildDecorations();
         buildLights();
         buildFoodNodes();
-        world.getChildren().addAll(arenaGroup, snakeGroup, foodGroup, decoGroup, particleGroup);
+        world.getChildren().addAll(arenaGroup, obstacleGroup, snakeGroup, foodGroup, decoGroup, particleGroup);
+    }
+
+    /** Rebuilds obstacle pylons from the model (changes only on reset / mode switch). */
+    private void renderObstacles() {
+        obstacleGroup.getChildren().clear();
+        for (Cell cell : game.obstacles()) {
+            Box pylon = new Box(30, 54, 30);
+            pylon.setTranslateX(toWorld(cell.x()));
+            pylon.setTranslateY(-22);
+            pylon.setTranslateZ(toWorld(cell.z()));
+            pylon.setMaterial(material("#3b2150", "#ff7ad0", 70));
+            obstacleGroup.getChildren().add(pylon);
+        }
     }
 
     private void buildArena() {
@@ -270,11 +293,13 @@ public class Snake3DApp extends Application {
         Label title = hudLabel("SNAKE 3D", 28, true, "#f5f7ff");
         title.setStyle(title.getStyle() + "-fx-letter-spacing: 2px;");
 
-        HBox hud = new HBox(18,
+        HBox hud = new HBox(14,
                 statCard("SCORE", scoreValue),
                 statCard("BEST", bestValue),
+                statCard("COMBO", comboValue),
                 statCard("SPEED", speedValue),
-                statCard("TRYB", modeValue)
+                statCard("POZIOM", difficultyValue),
+                statCard("PLANSZA", boardValue)
         );
         hud.setAlignment(Pos.TOP_LEFT);
 
@@ -282,7 +307,7 @@ public class Snake3DApp extends Application {
         topLeft.setAlignment(Pos.TOP_LEFT);
         topLeft.setPadding(new Insets(24));
 
-        Label controls = hudLabel("WASD • SPACE • P • 1·2·3 TRYB • M DŹWIĘK", 14, false, "#a9bad3");
+        Label controls = hudLabel("WASD • SPACE • P • 1·2·3 POZIOM • B PLANSZA • M DŹWIĘK", 13, false, "#a9bad3");
         controls.setStyle(controls.getStyle() +
                 "-fx-background-color: rgba(12,18,30,0.54);" +
                 "-fx-border-color: rgba(145,205,255,0.22);" +
@@ -298,8 +323,10 @@ public class Snake3DApp extends Application {
         centerTitle.setTextFill(Color.web("#f5f8ff"));
         centerSubtitle.setFont(Font.font("Segoe UI", FontWeight.MEDIUM, 15));
         centerSubtitle.setTextFill(Color.web("#afc0d9"));
+        centerScores.setFont(Font.font("Segoe UI", FontWeight.SEMI_BOLD, 14));
+        centerScores.setTextFill(Color.web("#ffd451"));
 
-        VBox centerBox = new VBox(14, centerTitle, centerSubtitle);
+        VBox centerBox = new VBox(14, centerTitle, centerSubtitle, centerScores);
         centerBox.setAlignment(Pos.CENTER);
         centerBox.setMaxWidth(700);
         centerBox.setPadding(new Insets(26, 34, 26, 34));
@@ -328,8 +355,8 @@ public class Snake3DApp extends Application {
         valueLabel.setTextFill(Color.web("#ffffff"));
 
         VBox box = new VBox(6, nameLabel, valueLabel);
-        box.setPadding(new Insets(14, 18, 14, 18));
-        box.setPrefWidth(140);
+        box.setPadding(new Insets(13, 16, 13, 16));
+        box.setPrefWidth(122);
         box.setStyle(
                 "-fx-background-color: rgba(14, 22, 37, 0.72);" +
                 "-fx-border-color: rgba(115, 190, 255, 0.20);" +
@@ -365,7 +392,11 @@ public class Snake3DApp extends Application {
                     return;
                 }
                 case M -> {
-                    sound.toggleMute();
+                    settings.setSoundEnabled(sound.toggleMute());
+                    return;
+                }
+                case B -> {
+                    cycleMode();
                     return;
                 }
                 case DIGIT1 -> {
@@ -409,6 +440,7 @@ public class Snake3DApp extends Application {
 
     private void startOrRestart() {
         game.start();
+        renderObstacles();
         resetInterpolation();
         syncSnakeNodes();
         positionFood();
@@ -420,11 +452,28 @@ public class Snake3DApp extends Application {
 
     private void selectDifficulty(Difficulty difficulty) {
         game.setDifficulty(difficulty);
+        settings.setDifficulty(difficulty);
         if (game.state() == GameState.RUNNING) {
             rebuildGameLoop();
             gameLoop.play();
         }
         updateHud();
+    }
+
+    /** Cycles the board mode, persists it and shows the freshly laid-out board. */
+    private void cycleMode() {
+        GameMode mode = game.mode().next();
+        game.setMode(mode); // resets the game to READY with the new layout
+        settings.setMode(mode);
+        if (gameLoop != null) {
+            gameLoop.stop();
+        }
+        renderObstacles();
+        resetInterpolation();
+        syncSnakeNodes();
+        positionFood();
+        updateHud();
+        updateCenterMessage();
     }
 
     private void syncLoopWithState() {
@@ -533,13 +582,13 @@ public class Snake3DApp extends Application {
             }
             case WON -> {
                 sound.win();
-                refreshBestScore();
+                recordResult();
                 spawnBurst(headX, headZ, "#9cffea", "#ffffff");
                 gameLoop.stop();
             }
             case GAME_OVER -> {
                 sound.gameOver();
-                refreshBestScore();
+                recordResult();
                 triggerShake();
                 gameLoop.stop();
             }
@@ -556,6 +605,12 @@ public class Snake3DApp extends Application {
             bestScore = game.score();
             highScoreStore.save(bestScore);
         }
+    }
+
+    /** Persists the finished game's score to the best-store and the leaderboard. */
+    private void recordResult() {
+        refreshBestScore();
+        leaderboard.submit(game.score());
     }
 
     /** Ensures the segment pool and scene-graph children match the snake length. */
@@ -698,31 +753,54 @@ public class Snake3DApp extends Application {
     private void updateHud() {
         scoreValue.setText(String.valueOf(game.score()));
         bestValue.setText(String.valueOf(bestScore));
+        comboValue.setText("x" + game.comboMultiplier());
+        comboValue.setTextFill(game.comboMultiplier() > 1 ? Color.web("#ffd451") : Color.web("#ffffff"));
         speedValue.setText(String.valueOf(Math.max(1, (game.length() - 1) / 2)));
-        modeValue.setText(game.difficulty().label());
+        difficultyValue.setText(game.difficulty().label());
+        boardValue.setText(game.mode().label());
     }
 
     private void updateCenterMessage() {
         switch (game.state()) {
             case READY -> showCenter("SNAKE 3D",
-                    "SPACE — start  •  WASD / strzałki — ruch  •  P — pauza");
-            case PAUSED -> showCenter("PAUZA", "P — wróć do gry  •  R — restart");
+                    "SPACE — start  •  WASD / strzałki — ruch  •  P — pauza", true);
+            case PAUSED -> showCenter("PAUZA", "P — wróć do gry  •  R — restart", false);
             case GAME_OVER -> showCenter("GAME OVER",
-                    "Wynik: " + game.score() + "  •  SPACE / R — restart");
+                    "Wynik: " + game.score() + "  •  SPACE / R — restart", true);
             case WON -> showCenter("WYGRANA!",
-                    "Wypełniłeś arenę! Wynik: " + game.score() + "  •  SPACE / R — restart");
+                    "Wypełniłeś arenę! Wynik: " + game.score() + "  •  SPACE / R — restart", true);
             case RUNNING -> {
                 centerTitle.setVisible(false);
                 centerSubtitle.setVisible(false);
+                centerScores.setVisible(false);
             }
         }
     }
 
-    private void showCenter(String title, String subtitle) {
+    private void showCenter(String title, String subtitle, boolean withScores) {
         centerTitle.setText(title);
         centerSubtitle.setText(subtitle);
         centerTitle.setVisible(true);
         centerSubtitle.setVisible(true);
+
+        centerScores.setText(topScoresText());
+        centerScores.setVisible(withScores && !leaderboard.top().isEmpty());
+        centerScores.setManaged(centerScores.isVisible());
+    }
+
+    private String topScoresText() {
+        List<Integer> top = leaderboard.top();
+        if (top.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("REKORDY:  ");
+        for (int i = 0; i < top.size(); i++) {
+            if (i > 0) {
+                sb.append("   ·   ");
+            }
+            sb.append(i + 1).append(". ").append(top.get(i));
+        }
+        return sb.toString();
     }
 
     private Box wall(double w, double h, double d, double x, double y, double z) {

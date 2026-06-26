@@ -14,6 +14,9 @@
         <maven.compiler.release>21</maven.compiler.release>
         <javafx.version>21.0.2</javafx.version>
         <junit.version>5.10.2</junit.version>
+        <!-- The headless smoke test is opt-in; the CI "smoke" job sets this true under xvfb. -->
+        <snake.smoke.headless>false</snake.smoke.headless>
+        <prism.order>sw</prism.order>
     </properties>
 
     <dependencies>
@@ -50,6 +53,12 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
+                <configuration>
+                    <systemPropertyVariables>
+                        <snake.smoke.headless>${snake.smoke.headless}</snake.smoke.headless>
+                        <prism.order>${prism.order}</prism.order>
+                    </systemPropertyVariables>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.openjfx</groupId>
