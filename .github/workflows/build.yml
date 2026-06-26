@@ -20,3 +20,21 @@ jobs:
 
       - name: Build and test
         run: mvn -B verify
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Install xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Headless smoke test
+        run: xvfb-run -a mvn -B test -Dtest=SmokeTest -Dsnake.smoke.headless=true -DfailIfNoTests=false

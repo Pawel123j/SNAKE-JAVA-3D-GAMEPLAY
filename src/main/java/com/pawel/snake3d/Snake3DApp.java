@@ -49,6 +49,7 @@ public class Snake3DApp extends Application {
 
     private final SnakeGame game = new SnakeGame(GRID_SIZE, random);
     private final HighScoreStore highScoreStore = new HighScoreStore();
+    private final Settings settings = new Settings();
     private final SoundManager sound = new SoundManager();
     private int bestScore;
 
@@ -58,6 +59,7 @@ public class Snake3DApp extends Application {
     private final Group foodGroup = new Group();
     private final Group decoGroup = new Group();
     private final Group particleGroup = new Group();
+    private final Group obstacleGroup = new Group();
 
     /** Reused snake segment nodes — grown on demand, never recreated per frame. */
     private final List<Box> segmentPool = new ArrayList<>();
@@ -87,7 +89,8 @@ public class Snake3DApp extends Application {
     private final Label scoreValue = new Label("0");
     private final Label bestValue = new Label("0");
     private final Label speedValue = new Label("1");
-    private final Label modeValue = new Label(Difficulty.NORMAL.label());
+    private final Label difficultyValue = new Label(Difficulty.NORMAL.label());
+    private final Label boardValue = new Label(GameMode.CLASSIC.label());
     private final Label centerTitle = new Label("SNAKE 3D");
     private final Label centerSubtitle = new Label("SPACE — start  •  WASD / strzałki — ruch  •  P — pauza");
 
@@ -106,8 +109,12 @@ public class Snake3DApp extends Application {
     @Override
     public void start(Stage stage) {
         bestScore = highScoreStore.load();
+        game.setDifficulty(settings.difficulty());
+        game.setMode(settings.mode());
+        sound.setEnabled(settings.isSoundEnabled());
 
         buildWorld();
+        renderObstacles();
         resetInterpolation();
         syncSnakeNodes();
         positionFood();
@@ -145,7 +152,20 @@ public class Snake3DApp extends Application {
         buildDecorations();
         buildLights();
         buildFoodNodes();
-        world.getChildren().addAll(arenaGroup, snakeGroup, foodGroup, decoGroup, particleGroup);
+        world.getChildren().addAll(arenaGroup, obstacleGroup, snakeGroup, foodGroup, decoGroup, particleGroup);
+    }
+
+    /** Rebuilds obstacle pylons from the model (changes only on reset / mode switch). */
+    private void renderObstacles() {
+        obstacleGroup.getChildren().clear();
+        for (Cell cell : game.obstacles()) {
+            Box pylon = new Box(30, 54, 30);
+            pylon.setTranslateX(toWorld(cell.x()));
+            pylon.setTranslateY(-22);
+            pylon.setTranslateZ(toWorld(cell.z()));
+            pylon.setMaterial(material("#3b2150", "#ff7ad0", 70));
+            obstacleGroup.getChildren().add(pylon);
+        }
     }
 
     private void buildArena() {
@@ -274,7 +294,8 @@ public class Snake3DApp extends Application {
                 statCard("SCORE", scoreValue),
                 statCard("BEST", bestValue),
                 statCard("SPEED", speedValue),
-                statCard("TRYB", modeValue)
+                statCard("POZIOM", difficultyValue),
+                statCard("PLANSZA", boardValue)
         );
         hud.setAlignment(Pos.TOP_LEFT);
 
@@ -282,7 +303,7 @@ public class Snake3DApp extends Application {
         topLeft.setAlignment(Pos.TOP_LEFT);
         topLeft.setPadding(new Insets(24));
 
-        Label controls = hudLabel("WASD • SPACE • P • 1·2·3 TRYB • M DŹWIĘK", 14, false, "#a9bad3");
+        Label controls = hudLabel("WASD • SPACE • P • 1·2·3 POZIOM • B PLANSZA • M DŹWIĘK", 13, false, "#a9bad3");
         controls.setStyle(controls.getStyle() +
                 "-fx-background-color: rgba(12,18,30,0.54);" +
                 "-fx-border-color: rgba(145,205,255,0.22);" +
@@ -365,7 +386,11 @@ public class Snake3DApp extends Application {
                     return;
                 }
                 case M -> {
-                    sound.toggleMute();
+                    settings.setSoundEnabled(sound.toggleMute());
+                    return;
+                }
+                case B -> {
+                    cycleMode();
                     return;
                 }
                 case DIGIT1 -> {
@@ -409,6 +434,7 @@ public class Snake3DApp extends Application {
 
     private void startOrRestart() {
         game.start();
+        renderObstacles();
         resetInterpolation();
         syncSnakeNodes();
         positionFood();
@@ -420,11 +446,28 @@ public class Snake3DApp extends Application {
 
     private void selectDifficulty(Difficulty difficulty) {
         game.setDifficulty(difficulty);
+        settings.setDifficulty(difficulty);
         if (game.state() == GameState.RUNNING) {
             rebuildGameLoop();
             gameLoop.play();
         }
         updateHud();
+    }
+
+    /** Cycles the board mode, persists it and shows the freshly laid-out board. */
+    private void cycleMode() {
+        GameMode mode = game.mode().next();
+        game.setMode(mode); // resets the game to READY with the new layout
+        settings.setMode(mode);
+        if (gameLoop != null) {
+            gameLoop.stop();
+        }
+        renderObstacles();
+        resetInterpolation();
+        syncSnakeNodes();
+        positionFood();
+        updateHud();
+        updateCenterMessage();
     }
 
     private void syncLoopWithState() {
@@ -699,7 +742,8 @@ public class Snake3DApp extends Application {
         scoreValue.setText(String.valueOf(game.score()));
         bestValue.setText(String.valueOf(bestScore));
         speedValue.setText(String.valueOf(Math.max(1, (game.length() - 1) / 2)));
-        modeValue.setText(game.difficulty().label());
+        difficultyValue.setText(game.difficulty().label());
+        boardValue.setText(game.mode().label());
     }
 
     private void updateCenterMessage() {

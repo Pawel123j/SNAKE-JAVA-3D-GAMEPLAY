@@ -1,10 +1,13 @@
 package com.pawel.snake3d;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 /**
  * Pure game logic for Snake, free of any rendering or JavaFX dependency so it
@@ -57,8 +60,10 @@ public class SnakeGame {
     private final Random random;
     private final FoodPlacer foodPlacer;
     private final LinkedList<Cell> snake = new LinkedList<>();
+    private final Set<Cell> obstacles = new HashSet<>();
 
     private Difficulty difficulty = Difficulty.NORMAL;
+    private GameMode mode = GameMode.CLASSIC;
     private Direction currentDirection;
     private Direction queuedDirection;
     private Cell food;
@@ -101,7 +106,28 @@ public class SnakeGame {
         bonusTimer = 0;
         applesEaten = 0;
         state = GameState.READY;
+        obstacles.clear();
+        if (mode == GameMode.OBSTACLES) {
+            generateObstacles();
+        }
         spawnFood();
+    }
+
+    /**
+     * Scatters static obstacles across the arena, keeping the snake's starting
+     * lane clear so the player is never trapped at the first step.
+     */
+    private void generateObstacles() {
+        int startRow = gridSize / 2;
+        int target = Math.max(4, gridSize * gridSize / 24);
+        int attempts = 0;
+        while (obstacles.size() < target && attempts++ < target * 30) {
+            Cell candidate = new Cell(random.nextInt(gridSize), random.nextInt(gridSize));
+            if (Math.abs(candidate.z() - startRow) <= 1 || snake.contains(candidate)) {
+                continue;
+            }
+            obstacles.add(candidate);
+        }
     }
 
     /** Starts a fresh game (resets then runs). */
@@ -148,7 +174,14 @@ public class SnakeGame {
 
         Cell next = snake.getFirst().step(currentDirection);
 
-        if (isOutOfBounds(next)) {
+        if (mode == GameMode.WRAP) {
+            next = wrap(next);
+        } else if (isOutOfBounds(next)) {
+            state = GameState.GAME_OVER;
+            return StepResult.GAME_OVER;
+        }
+
+        if (obstacles.contains(next)) {
             state = GameState.GAME_OVER;
             return StepResult.GAME_OVER;
         }
@@ -203,6 +236,10 @@ public class SnakeGame {
         return cell.x() < 0 || cell.x() >= gridSize || cell.z() < 0 || cell.z() >= gridSize;
     }
 
+    private Cell wrap(Cell cell) {
+        return new Cell(Math.floorMod(cell.x(), gridSize), Math.floorMod(cell.z(), gridSize));
+    }
+
     /** True if any segment except the (moving) tail occupies {@code cell}. */
     private boolean bodyExceptTailContains(Cell cell) {
         int index = 0;
@@ -236,6 +273,9 @@ public class SnakeGame {
     private List<Cell> freeCells() {
         boolean[][] occupied = new boolean[gridSize][gridSize];
         for (Cell c : snake) {
+            occupied[c.x()][c.z()] = true;
+        }
+        for (Cell c : obstacles) {
             occupied[c.x()][c.z()] = true;
         }
         List<Cell> free = new ArrayList<>();
@@ -305,6 +345,23 @@ public class SnakeGame {
         }
     }
 
+    public GameMode mode() {
+        return mode;
+    }
+
+    /** Changes the board mode and resets the game to apply the new layout. */
+    public void setMode(GameMode mode) {
+        if (mode != null && mode != this.mode) {
+            this.mode = mode;
+            reset();
+        }
+    }
+
+    /** @return unmodifiable view of obstacle cells (empty unless in OBSTACLES mode). */
+    public Set<Cell> obstacles() {
+        return Collections.unmodifiableSet(obstacles);
+    }
+
     /** @return delay before the next tick (ms) for the current difficulty. */
     public double tickMs() {
         return difficulty.tickMs(snake.size());
@@ -334,5 +391,16 @@ public class SnakeGame {
     /** Visible for testing bonus spawn cadence. */
     void setApplesEatenForTest(int count) {
         this.applesEaten = count;
+    }
+
+    /** Visible for testing obstacle collisions without random generation. */
+    void setObstaclesForTest(Collection<Cell> cells) {
+        obstacles.clear();
+        obstacles.addAll(cells);
+    }
+
+    /** Visible for testing — sets the mode without resetting the board. */
+    void setModeForTest(GameMode mode) {
+        this.mode = mode;
     }
 }
