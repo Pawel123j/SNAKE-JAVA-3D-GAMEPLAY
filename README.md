@@ -8,7 +8,10 @@ Elegancka gra Snake w prawdziwym 3D zrobiona w **Java + JavaFX 3D + Maven**.
 
 - kamera perspektywiczna 3D z lekkim, płynnym ruchem,
 - światła i futurystyczna arena (filary, siatka, gwiazdy),
-- animowany, świecący food,
+- **płynny ruch węża** — segmenty interpolowane między klatkami,
+- animowany, świecący food oraz **złoty bonus** (więcej punktów, znika po chwili),
+- **efekt cząsteczek** przy jedzeniu i **wstrząs ekranu** przy końcu gry,
+- **dźwięk** generowany w locie (jedzenie / bonus / koniec / wygrana),
 - elegancki HUD (wynik, rekord, prędkość, tryb),
 - **3 poziomy trudności** (łatwy / normalny / trudny),
 - **zapisywany rekord** — najlepszy wynik przeżywa zamknięcie gry,
@@ -24,6 +27,12 @@ Elegancka gra Snake w prawdziwym 3D zrobiona w **Java + JavaFX 3D + Maven**.
 | **R** | szybki restart |
 | **P** | pauza |
 | **1 / 2 / 3** | tryb: łatwy / normalny / trudny |
+| **M** | włącz / wycisz dźwięk |
+
+### Punktacja
+
+- zwykły food: **+10** i wąż rośnie,
+- złoty bonus: **+50**, bez wzrostu — pojawia się co 5 zjedzonych jabłek i znika po chwili.
 
 ## Wymagania
 
@@ -66,12 +75,13 @@ a `Snake3DApp` zajmuje się wyłącznie renderowaniem i wejściem:
 
 | Klasa | Rola |
 |---|---|
-| `SnakeGame` | model gry: ruch, jedzenie, kolizje, warunek wygranej |
+| `SnakeGame` | model gry: ruch, jedzenie, bonus, kolizje, warunek wygranej |
 | `GameState` | stany: READY / RUNNING / PAUSED / GAME_OVER / WON |
 | `Direction` | kierunki ruchu + wektory przesunięcia |
 | `Cell` | współrzędna na siatce (rekord) |
 | `Difficulty` | presety prędkości (EASY / NORMAL / HARD) |
 | `HighScoreStore` | zapis/odczyt rekordu z `~/.snake3d/highscore.txt` |
+| `SoundManager` | syntezowane efekty dźwiękowe (bez plików audio) |
 | `Snake3DApp` | warstwa widoku JavaFX (renderowanie, HUD, input) |
 
 Renderowanie korzysta z puli węzłów i cache materiałów — segmenty węża są
@@ -94,6 +104,7 @@ snake-3d-deluxe/
     │   ├── GameState.java
     │   ├── Difficulty.java
     │   ├── HighScoreStore.java
+    │   ├── SoundManager.java
     │   ├── Cell.java
     │   └── Direction.java
     └── test/java/com/pawel/snake3d/

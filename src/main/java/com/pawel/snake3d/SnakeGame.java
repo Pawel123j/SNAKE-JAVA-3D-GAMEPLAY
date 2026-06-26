@@ -17,6 +17,12 @@ public class SnakeGame {
     public static final int START_LENGTH = 4;
     /** Points awarded for eating a single food. */
     public static final int FOOD_SCORE = 10;
+    /** Points awarded for eating a golden bonus. */
+    public static final int BONUS_SCORE = 50;
+    /** A bonus appears after this many regular foods are eaten. */
+    public static final int FOODS_PER_BONUS = 5;
+    /** How many steps a bonus stays on the board before vanishing. */
+    public static final int BONUS_LIFETIME = 30;
 
     /**
      * Strategy for choosing where the next food appears. Receives the list of
@@ -36,6 +42,8 @@ public class SnakeGame {
         MOVED,
         /** Snake ate food and grew. */
         ATE,
+        /** Snake ate a golden bonus (extra points, no growth). */
+        ATE_BONUS,
         /** Snake crashed — game over. */
         GAME_OVER,
         /** Snake ate the last free cell and won. */
@@ -54,6 +62,9 @@ public class SnakeGame {
     private Direction currentDirection;
     private Direction queuedDirection;
     private Cell food;
+    private Cell bonusFood;
+    private int bonusTimer;
+    private int applesEaten;
     private int score;
     private GameState state;
 
@@ -86,6 +97,9 @@ public class SnakeGame {
         currentDirection = Direction.RIGHT;
         queuedDirection = Direction.RIGHT;
         score = 0;
+        bonusFood = null;
+        bonusTimer = 0;
+        applesEaten = 0;
         state = GameState.READY;
         spawnFood();
     }
@@ -124,6 +138,10 @@ public class SnakeGame {
             return StepResult.IGNORED;
         }
 
+        if (bonusFood != null && --bonusTimer <= 0) {
+            bonusFood = null;
+        }
+
         if (!currentDirection.isOpposite(queuedDirection)) {
             currentDirection = queuedDirection;
         }
@@ -135,7 +153,9 @@ public class SnakeGame {
             return StepResult.GAME_OVER;
         }
 
-        boolean grow = next.equals(food);
+        boolean eatsApple = next.equals(food);
+        boolean eatsBonus = bonusFood != null && next.equals(bonusFood);
+        boolean grow = eatsApple; // bonuses reward points but do not grow the snake
         boolean hitsSelf = grow ? snake.contains(next) : bodyExceptTailContains(next);
         if (hitsSelf) {
             state = GameState.GAME_OVER;
@@ -143,13 +163,40 @@ public class SnakeGame {
         }
 
         snake.addFirst(next);
-        if (grow) {
+
+        if (eatsApple) {
             score += FOOD_SCORE;
+            applesEaten++;
             spawnFood();
+            maybeSpawnBonus();
             return state == GameState.WON ? StepResult.WON : StepResult.ATE;
+        }
+        if (eatsBonus) {
+            score += BONUS_SCORE;
+            bonusFood = null;
+            bonusTimer = 0;
+            snake.removeLast();
+            return StepResult.ATE_BONUS;
         }
         snake.removeLast();
         return StepResult.MOVED;
+    }
+
+    /** Spawns a golden bonus every {@link #FOODS_PER_BONUS} apples, if there is room. */
+    private void maybeSpawnBonus() {
+        if (bonusFood != null || state == GameState.WON) {
+            return;
+        }
+        if (applesEaten == 0 || applesEaten % FOODS_PER_BONUS != 0) {
+            return;
+        }
+        List<Cell> free = freeCells();
+        free.remove(food);
+        if (free.isEmpty()) {
+            return;
+        }
+        bonusFood = foodPlacer.place(free, random);
+        bonusTimer = BONUS_LIFETIME;
     }
 
     private boolean isOutOfBounds(Cell cell) {
@@ -226,6 +273,16 @@ public class SnakeGame {
         return food;
     }
 
+    /** @return the active golden bonus cell, or {@code null} when none is on the board. */
+    public Cell bonusFood() {
+        return bonusFood;
+    }
+
+    /** @return remaining bonus lifetime as a fraction in [0, 1], or 0 when inactive. */
+    public double bonusFraction() {
+        return bonusFood == null ? 0.0 : (double) bonusTimer / BONUS_LIFETIME;
+    }
+
     public int score() {
         return score;
     }
@@ -266,5 +323,16 @@ public class SnakeGame {
         this.queuedDirection = direction;
         this.food = food;
         this.state = state;
+    }
+
+    /** Visible for testing the golden bonus. */
+    void setBonusForTest(Cell bonus, int timer) {
+        this.bonusFood = bonus;
+        this.bonusTimer = timer;
+    }
+
+    /** Visible for testing bonus spawn cadence. */
+    void setApplesEatenForTest(int count) {
+        this.applesEaten = count;
     }
 }

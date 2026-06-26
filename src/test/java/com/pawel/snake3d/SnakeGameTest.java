@@ -181,4 +181,49 @@ class SnakeGameTest {
         game.setDifficulty(null);
         assertSame(Difficulty.HARD, game.difficulty());
     }
+
+    @Test
+    void eatingBonusScoresWithoutGrowing() {
+        SnakeGame game = newGame();
+        game.loadState(
+                List.of(new Cell(5, 5), new Cell(4, 5), new Cell(3, 5), new Cell(2, 5)),
+                Direction.RIGHT,
+                new Cell(0, 0),
+                GameState.RUNNING);
+        game.setBonusForTest(new Cell(6, 5), 10);
+
+        assertEquals(SnakeGame.StepResult.ATE_BONUS, game.step());
+
+        assertEquals(SnakeGame.BONUS_SCORE, game.score());
+        assertEquals(SnakeGame.START_LENGTH, game.length(), "bonus must not grow the snake");
+        assertNull(game.bonusFood());
+    }
+
+    @Test
+    void bonusExpiresAfterLifetime() {
+        SnakeGame game = newGame();
+        game.loadState(
+                List.of(new Cell(5, 5), new Cell(4, 5), new Cell(3, 5), new Cell(2, 5)),
+                Direction.RIGHT,
+                new Cell(0, 0),
+                GameState.RUNNING);
+        game.setBonusForTest(new Cell(12, 12), 1); // one step left
+
+        assertEquals(SnakeGame.StepResult.MOVED, game.step());
+        assertNull(game.bonusFood(), "bonus should vanish once its timer runs out");
+    }
+
+    @Test
+    void bonusAppearsAfterEnoughApples() {
+        SnakeGame game = newGame();
+        game.setApplesEatenForTest(SnakeGame.FOODS_PER_BONUS - 1);
+        game.loadState(
+                List.of(new Cell(5, 5), new Cell(4, 5), new Cell(3, 5), new Cell(2, 5)),
+                Direction.RIGHT,
+                new Cell(6, 5),
+                GameState.RUNNING);
+
+        assertEquals(SnakeGame.StepResult.ATE, game.step());
+        assertNotNull(game.bonusFood(), "a golden bonus should appear on the Nth apple");
+    }
 }
