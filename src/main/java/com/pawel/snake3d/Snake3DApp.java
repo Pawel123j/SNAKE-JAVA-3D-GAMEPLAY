@@ -1,8 +1,14 @@
 package com.pawel.snake3d;
 
 import javafx.animation.AnimationTimer;
+import javafx.animation.FadeTransition;
+import javafx.animation.Interpolator;
 import javafx.animation.KeyFrame;
+import javafx.animation.KeyValue;
+import javafx.animation.ParallelTransition;
+import javafx.animation.ScaleTransition;
 import javafx.animation.Timeline;
+import javafx.animation.TranslateTransition;
 import javafx.application.Application;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -25,8 +31,10 @@ import javafx.scene.transform.Translate;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 
-import java.util.LinkedList;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 public class Snake3DApp extends Application {
@@ -38,25 +46,31 @@ public class Snake3DApp extends Application {
     private static final double WALL_HEIGHT = 36;
 
     private final Random random = new Random();
-    private final LinkedList<Cell> snake = new LinkedList<>();
 
-    private Direction currentDirection = Direction.RIGHT;
-    private Direction queuedDirection = Direction.RIGHT;
-
-    private Cell food;
-
-    private boolean started = false;
-    private boolean paused = false;
-    private boolean gameOver = false;
-
-    private int score = 0;
-    private int bestScore = 0;
+    private final SnakeGame game = new SnakeGame(GRID_SIZE, random);
+    private final HighScoreStore highScoreStore = new HighScoreStore();
+    private final SoundManager sound = new SoundManager();
+    private int bestScore;
 
     private final Group world = new Group();
     private final Group arenaGroup = new Group();
     private final Group snakeGroup = new Group();
     private final Group foodGroup = new Group();
     private final Group decoGroup = new Group();
+    private final Group particleGroup = new Group();
+
+    /** Reused snake segment nodes — grown on demand, never recreated per frame. */
+    private final List<Box> segmentPool = new ArrayList<>();
+    private Sphere headAura;
+
+    /** Snapshots used to interpolate the snake smoothly between game ticks. */
+    private List<Cell> currentBody = List.of();
+    private List<Cell> previousBody = List.of();
+    private long stepTimeNanos;
+    private double stepDurationNanos = 1;
+
+    /** Cache of immutable materials, keyed by their colour/power signature. */
+    private final Map<String, PhongMaterial> materialCache = new HashMap<>();
 
     private final PerspectiveCamera camera = new PerspectiveCamera(true);
     private final Rotate cameraRotateX = new Rotate(-33, Rotate.X_AXIS);
@@ -65,6 +79,7 @@ public class Snake3DApp extends Application {
 
     private final Rotate worldRotateY = new Rotate(0, Rotate.Y_AXIS);
     private final Translate worldFloat = new Translate(0, 0, 0);
+    private final Translate shake = new Translate(0, 0, 0);
 
     private Timeline gameLoop;
     private AnimationTimer renderLoop;
@@ -72,11 +87,16 @@ public class Snake3DApp extends Application {
     private final Label scoreValue = new Label("0");
     private final Label bestValue = new Label("0");
     private final Label speedValue = new Label("1");
+    private final Label modeValue = new Label(Difficulty.NORMAL.label());
     private final Label centerTitle = new Label("SNAKE 3D");
     private final Label centerSubtitle = new Label("SPACE — start  •  WASD / strzałki — ruch  •  P — pauza");
 
     private Sphere foodOrb;
+    private Sphere foodHalo;
     private PointLight foodLight;
+    private Sphere bonusOrb;
+    private Sphere bonusHalo;
+    private PointLight bonusLight;
     private PointLight movingAccentLight;
 
     public static void main(String[] args) {
@@ -85,11 +105,12 @@ public class Snake3DApp extends Application {
 
     @Override
     public void start(Stage stage) {
+        bestScore = highScoreStore.load();
+
         buildWorld();
-        buildSnake();
-        spawnFood();
-        renderSnake();
-        renderFood();
+        resetInterpolation();
+        syncSnakeNodes();
+        positionFood();
 
         camera.setNearClip(0.1);
         camera.setFarClip(10000);
@@ -112,17 +133,19 @@ public class Snake3DApp extends Application {
         stage.setScene(scene);
         stage.setMinWidth(980);
         stage.setMinHeight(680);
+        stage.setOnHidden(e -> sound.shutdown());
         stage.show();
 
         renderLoop.start();
     }
 
     private void buildWorld() {
-        world.getTransforms().addAll(worldRotateY, worldFloat);
+        world.getTransforms().addAll(worldRotateY, worldFloat, shake);
         buildArena();
         buildDecorations();
         buildLights();
-        world.getChildren().addAll(arenaGroup, snakeGroup, foodGroup, decoGroup);
+        buildFoodNodes();
+        world.getChildren().addAll(arenaGroup, snakeGroup, foodGroup, decoGroup, particleGroup);
     }
 
     private void buildArena() {
@@ -215,6 +238,34 @@ public class Snake3DApp extends Application {
         world.getChildren().addAll(ambient, keyLight, rimLight, magentaLight, movingAccentLight);
     }
 
+    /** Builds the persistent food / bonus / aura nodes once; positions update each frame. */
+    private void buildFoodNodes() {
+        foodOrb = new Sphere(14);
+        foodOrb.setMaterial(material("#ff7aa8", "#fffbff", 150));
+
+        foodHalo = new Sphere(23);
+        foodHalo.setMaterial(material("#281326", "#ff9cc3", 110));
+        foodHalo.setOpacity(0.22);
+        foodHalo.setDrawMode(DrawMode.FILL);
+
+        foodLight = new PointLight(Color.web("#ff84b1"));
+
+        bonusOrb = new Sphere(16);
+        bonusOrb.setMaterial(material("#ffd451", "#fff7d6", 160));
+
+        bonusHalo = new Sphere(28);
+        bonusHalo.setMaterial(material("#3a2c0c", "#ffe690", 120));
+        bonusHalo.setOpacity(0.25);
+
+        bonusLight = new PointLight(Color.web("#ffd451"));
+
+        foodGroup.getChildren().addAll(foodHalo, foodOrb, foodLight, bonusHalo, bonusOrb, bonusLight);
+
+        headAura = new Sphere(24);
+        headAura.setMaterial(material("#1b3644", "#6effdf", 96));
+        headAura.setOpacity(0.22);
+    }
+
     private StackPane buildOverlay() {
         Label title = hudLabel("SNAKE 3D", 28, true, "#f5f7ff");
         title.setStyle(title.getStyle() + "-fx-letter-spacing: 2px;");
@@ -222,7 +273,8 @@ public class Snake3DApp extends Application {
         HBox hud = new HBox(18,
                 statCard("SCORE", scoreValue),
                 statCard("BEST", bestValue),
-                statCard("SPEED", speedValue)
+                statCard("SPEED", speedValue),
+                statCard("TRYB", modeValue)
         );
         hud.setAlignment(Pos.TOP_LEFT);
 
@@ -230,7 +282,7 @@ public class Snake3DApp extends Application {
         topLeft.setAlignment(Pos.TOP_LEFT);
         topLeft.setPadding(new Insets(24));
 
-        Label controls = hudLabel("WASD / STRZAŁKI • SPACE • P", 14, false, "#a9bad3");
+        Label controls = hudLabel("WASD • SPACE • P • 1·2·3 TRYB • M DŹWIĘK", 14, false, "#a9bad3");
         controls.setStyle(controls.getStyle() +
                 "-fx-background-color: rgba(12,18,30,0.54);" +
                 "-fx-border-color: rgba(145,205,255,0.22);" +
@@ -299,56 +351,96 @@ public class Snake3DApp extends Application {
         scene.setOnKeyPressed(event -> {
             KeyCode code = event.getCode();
 
-            if (code == KeyCode.SPACE) {
-                if (!started || gameOver) {
-                    restartGame();
-                    started = true;
-                    paused = false;
-                    gameOver = false;
-                    gameLoop.play();
-                    updateCenterMessage();
+            switch (code) {
+                case SPACE, R -> {
+                    startOrRestart();
+                    return;
                 }
-                return;
-            }
-
-            if (code == KeyCode.P && started && !gameOver) {
-                paused = !paused;
-                if (paused) {
-                    gameLoop.pause();
-                } else {
-                    gameLoop.play();
+                case P -> {
+                    if (game.state() == GameState.RUNNING || game.state() == GameState.PAUSED) {
+                        game.togglePause();
+                        syncLoopWithState();
+                        updateCenterMessage();
+                    }
+                    return;
                 }
-                updateCenterMessage();
-                return;
+                case M -> {
+                    sound.toggleMute();
+                    return;
+                }
+                case DIGIT1 -> {
+                    selectDifficulty(Difficulty.EASY);
+                    return;
+                }
+                case DIGIT2 -> {
+                    selectDifficulty(Difficulty.NORMAL);
+                    return;
+                }
+                case DIGIT3 -> {
+                    selectDifficulty(Difficulty.HARD);
+                    return;
+                }
+                default -> { /* fall through to movement keys */ }
             }
 
-            if (code == KeyCode.R) {
-                restartGame();
-                started = true;
-                paused = false;
-                gameOver = false;
-                gameLoop.play();
-                updateCenterMessage();
-                return;
-            }
-
-            Direction newDirection = null;
-            if (code == KeyCode.W || code == KeyCode.UP) newDirection = Direction.UP;
-            if (code == KeyCode.S || code == KeyCode.DOWN) newDirection = Direction.DOWN;
-            if (code == KeyCode.A || code == KeyCode.LEFT) newDirection = Direction.LEFT;
-            if (code == KeyCode.D || code == KeyCode.RIGHT) newDirection = Direction.RIGHT;
-
-            if (newDirection != null && !isOpposite(currentDirection, newDirection)) {
-                queuedDirection = newDirection;
-                if (!started) {
-                    started = true;
-                    paused = false;
-                    gameOver = false;
+            Direction newDirection = directionFor(code);
+            if (newDirection != null) {
+                game.setDirection(newDirection);
+                if (game.state() == GameState.READY) {
+                    game.start();
+                    resetInterpolation();
+                    rebuildGameLoop();
                     gameLoop.play();
                     updateCenterMessage();
                 }
             }
         });
+    }
+
+    private Direction directionFor(KeyCode code) {
+        return switch (code) {
+            case W, UP -> Direction.UP;
+            case S, DOWN -> Direction.DOWN;
+            case A, LEFT -> Direction.LEFT;
+            case D, RIGHT -> Direction.RIGHT;
+            default -> null;
+        };
+    }
+
+    private void startOrRestart() {
+        game.start();
+        resetInterpolation();
+        syncSnakeNodes();
+        positionFood();
+        rebuildGameLoop();
+        gameLoop.play();
+        updateHud();
+        updateCenterMessage();
+    }
+
+    private void selectDifficulty(Difficulty difficulty) {
+        game.setDifficulty(difficulty);
+        if (game.state() == GameState.RUNNING) {
+            rebuildGameLoop();
+            gameLoop.play();
+        }
+        updateHud();
+    }
+
+    private void syncLoopWithState() {
+        if (game.state() == GameState.RUNNING) {
+            gameLoop.play();
+        } else {
+            gameLoop.pause();
+        }
+    }
+
+    /** Aligns the interpolation snapshots with the model's current state. */
+    private void resetInterpolation() {
+        currentBody = List.copyOf(game.snakeBody());
+        previousBody = currentBody;
+        stepTimeNanos = System.nanoTime();
+        stepDurationNanos = Math.max(1, game.tickMs() * 1_000_000.0);
     }
 
     private void setupLoops() {
@@ -367,156 +459,131 @@ public class Snake3DApp extends Application {
                 cameraPosition.setY(-290 + Math.sin(t * 0.9) * 10);
                 cameraPosition.setZ(-1020 + Math.cos(t * 0.55) * 18);
 
-                if (foodOrb != null) {
-                    foodOrb.setTranslateY(-16 + Math.sin(t * 3.4) * 6.5);
-                    foodOrb.setRotate(foodOrb.getRotate() + 1.7);
-                }
+                double alpha = game.state() == GameState.RUNNING
+                        ? clamp((now - stepTimeNanos) / stepDurationNanos, 0, 1)
+                        : 1.0;
+                positionSnake(alpha, t);
 
-                if (foodLight != null && food != null) {
-                    foodLight.setTranslateX(toWorld(food.x()));
-                    foodLight.setTranslateY(-38 + Math.sin(t * 3.2) * 7);
-                    foodLight.setTranslateZ(toWorld(food.z()));
-                }
-
-                if (!snake.isEmpty()) {
-                    Cell head = snake.getFirst();
-                    movingAccentLight.setTranslateX(toWorld(head.x()));
-                    movingAccentLight.setTranslateZ(toWorld(head.z()));
-                    movingAccentLight.setTranslateY(-55 + Math.cos(t * 4.0) * 8);
-                }
+                animateFood(t);
             }
         };
+    }
+
+    private void animateFood(double t) {
+        Cell food = game.food();
+        boolean hasFood = food != null;
+        foodOrb.setVisible(hasFood);
+        foodHalo.setVisible(hasFood);
+        foodLight.setLightOn(hasFood);
+        if (hasFood) {
+            foodOrb.setTranslateY(-16 + Math.sin(t * 3.4) * 6.5);
+            foodOrb.setRotate(foodOrb.getRotate() + 1.7);
+            foodLight.setTranslateY(-38 + Math.sin(t * 3.2) * 7);
+        }
+
+        Cell bonus = game.bonusFood();
+        boolean hasBonus = bonus != null;
+        bonusOrb.setVisible(hasBonus);
+        bonusHalo.setVisible(hasBonus);
+        bonusLight.setLightOn(hasBonus);
+        if (hasBonus) {
+            double pulse = 1.0 + Math.sin(t * 6.0) * 0.18;
+            bonusOrb.setScaleX(pulse);
+            bonusOrb.setScaleY(pulse);
+            bonusOrb.setScaleZ(pulse);
+            bonusOrb.setTranslateY(-18 + Math.sin(t * 4.2) * 7);
+            bonusOrb.setRotate(bonusOrb.getRotate() + 2.6);
+            bonusLight.setTranslateY(-40 + Math.sin(t * 4.0) * 8);
+        }
     }
 
     private void rebuildGameLoop() {
         if (gameLoop != null) {
             gameLoop.stop();
         }
-
-        gameLoop = new Timeline(new KeyFrame(Duration.millis(currentTickMs()), e -> stepGame()));
+        gameLoop = new Timeline(new KeyFrame(Duration.millis(game.tickMs()), e -> stepGame()));
         gameLoop.setCycleCount(Timeline.INDEFINITE);
     }
 
-    private double currentTickMs() {
-        int growth = Math.max(0, snake.size() - 4);
-        return Math.max(78, 220 - growth * 7.5);
-    }
-
-    private void restartGame() {
-        snake.clear();
-        snake.add(new Cell(7, 9));
-        snake.add(new Cell(6, 9));
-        snake.add(new Cell(5, 9));
-        snake.add(new Cell(4, 9));
-
-        currentDirection = Direction.RIGHT;
-        queuedDirection = Direction.RIGHT;
-        score = 0;
-        gameOver = false;
-        paused = false;
-        spawnFood();
-        renderSnake();
-        renderFood();
-        rebuildGameLoop();
-        updateHud();
-    }
-
-    private void buildSnake() {
-        if (snake.isEmpty()) {
-            snake.add(new Cell(7, 9));
-            snake.add(new Cell(6, 9));
-            snake.add(new Cell(5, 9));
-            snake.add(new Cell(4, 9));
-        }
-    }
-
     private void stepGame() {
-        if (!started || paused || gameOver) {
-            return;
+        SnakeGame.StepResult result = game.step();
+
+        previousBody = currentBody;
+        currentBody = List.copyOf(game.snakeBody());
+        stepTimeNanos = System.nanoTime();
+        stepDurationNanos = Math.max(1, game.tickMs() * 1_000_000.0);
+        syncSnakeNodes();
+
+        Cell head = currentBody.get(0);
+        double headX = toWorld(head.x());
+        double headZ = toWorld(head.z());
+
+        switch (result) {
+            case ATE -> {
+                sound.eat();
+                refreshBestScore();
+                spawnBurst(headX, headZ, "#ff7aa8", "#fffbff");
+                rebuildGameLoop();
+                gameLoop.play();
+            }
+            case ATE_BONUS -> {
+                sound.bonus();
+                refreshBestScore();
+                spawnBurst(headX, headZ, "#ffd451", "#fff7d6");
+            }
+            case WON -> {
+                sound.win();
+                refreshBestScore();
+                spawnBurst(headX, headZ, "#9cffea", "#ffffff");
+                gameLoop.stop();
+            }
+            case GAME_OVER -> {
+                sound.gameOver();
+                refreshBestScore();
+                triggerShake();
+                gameLoop.stop();
+            }
+            default -> { /* MOVED / IGNORED — nothing extra */ }
         }
 
-        if (!isOpposite(currentDirection, queuedDirection)) {
-            currentDirection = queuedDirection;
-        }
-
-        Cell head = snake.getFirst();
-        Cell next = switch (currentDirection) {
-            case UP -> new Cell(head.x(), head.z() - 1);
-            case DOWN -> new Cell(head.x(), head.z() + 1);
-            case LEFT -> new Cell(head.x() - 1, head.z());
-            case RIGHT -> new Cell(head.x() + 1, head.z());
-        };
-
-        if (next.x() < 0 || next.x() >= GRID_SIZE || next.z() < 0 || next.z() >= GRID_SIZE) {
-            triggerGameOver();
-            return;
-        }
-
-        boolean grow = next.equals(food);
-        List<Cell> collisionList = grow ? snake : snake.subList(0, snake.size() - 1);
-        if (collisionList.contains(next)) {
-            triggerGameOver();
-            return;
-        }
-
-        snake.addFirst(next);
-        if (!grow) {
-            snake.removeLast();
-        } else {
-            score += 10;
-            bestScore = Math.max(bestScore, score);
-            spawnFood();
-            rebuildGameLoop();
-            gameLoop.play();
-        }
-
-        renderSnake();
-        renderFood();
-        updateHud();
-    }
-
-    private void triggerGameOver() {
-        gameOver = true;
-        bestScore = Math.max(bestScore, score);
-        gameLoop.stop();
+        positionFood();
         updateHud();
         updateCenterMessage();
     }
 
-    private void spawnFood() {
-        Cell candidate;
-        do {
-            candidate = new Cell(random.nextInt(GRID_SIZE), random.nextInt(GRID_SIZE));
-        } while (snake.contains(candidate));
-        food = candidate;
+    private void refreshBestScore() {
+        if (game.score() > bestScore) {
+            bestScore = game.score();
+            highScoreStore.save(bestScore);
+        }
     }
 
-    private void renderSnake() {
-        snakeGroup.getChildren().clear();
+    /** Ensures the segment pool and scene-graph children match the snake length. */
+    private void syncSnakeNodes() {
+        int n = currentBody.size();
 
-        for (int i = snake.size() - 1; i >= 0; i--) {
-            Cell cell = snake.get(i);
+        while (segmentPool.size() < n) {
+            Box cube = new Box(SEGMENT_SIZE, SEGMENT_SIZE, SEGMENT_SIZE);
+            cube.setCullFace(CullFace.BACK);
+            segmentPool.add(cube);
+        }
+
+        snakeGroup.getChildren().clear();
+        snakeGroup.getChildren().add(headAura);
+
+        for (int i = 0; i < n; i++) {
             boolean isHead = i == 0;
             double size = isHead ? SEGMENT_SIZE + 3 : SEGMENT_SIZE;
 
-            Box cube = new Box(size, size, size);
-            cube.setTranslateX(toWorld(cell.x()));
-            cube.setTranslateY(-10);
-            cube.setTranslateZ(toWorld(cell.z()));
-            cube.setCullFace(CullFace.BACK);
+            Box cube = segmentPool.get(i);
+            cube.setWidth(size);
+            cube.setHeight(size);
+            cube.setDepth(size);
 
             if (isHead) {
                 cube.setMaterial(material("#9cffea", "#2affb9", 128));
-
-                Sphere headAura = new Sphere(24);
-                headAura.setTranslateX(cube.getTranslateX());
-                headAura.setTranslateY(-10);
-                headAura.setTranslateZ(cube.getTranslateZ());
-                headAura.setMaterial(material("#1b3644", "#6effdf", 96));
-                headAura.setOpacity(0.22);
-                snakeGroup.getChildren().add(headAura);
             } else {
-                double blend = 0.25 + (snake.size() - i) * 0.04;
+                double blend = 0.25 + (n - i) * 0.04;
                 cube.setMaterial(material(mixColor(blend), "#79ffe2", 90));
             }
 
@@ -524,64 +591,138 @@ public class Snake3DApp extends Application {
         }
     }
 
-    private void renderFood() {
-        foodGroup.getChildren().clear();
+    /** Positions snake segments by interpolating between the last two ticks. */
+    private void positionSnake(double alpha, double t) {
+        int n = currentBody.size();
+        for (int i = 0; i < n; i++) {
+            Cell curr = currentBody.get(i);
+            Cell prev = i < previousBody.size() ? previousBody.get(i) : curr;
 
-        foodOrb = new Sphere(14);
-        foodOrb.setTranslateX(toWorld(food.x()));
-        foodOrb.setTranslateY(-16);
-        foodOrb.setTranslateZ(toWorld(food.z()));
-        foodOrb.setMaterial(material("#ff7aa8", "#fffbff", 150));
+            double x = lerp(toWorld(prev.x()), toWorld(curr.x()), alpha);
+            double z = lerp(toWorld(prev.z()), toWorld(curr.z()), alpha);
 
-        Sphere halo = new Sphere(23);
-        halo.setTranslateX(toWorld(food.x()));
-        halo.setTranslateY(-16);
-        halo.setTranslateZ(toWorld(food.z()));
-        halo.setMaterial(material("#281326", "#ff9cc3", 110));
-        halo.setOpacity(0.22);
-        halo.setDrawMode(DrawMode.FILL);
+            Box cube = segmentPool.get(i);
+            cube.setTranslateX(x);
+            cube.setTranslateY(-10);
+            cube.setTranslateZ(z);
 
-        foodLight = new PointLight(Color.web("#ff84b1"));
-        foodLight.setTranslateX(toWorld(food.x()));
-        foodLight.setTranslateY(-32);
-        foodLight.setTranslateZ(toWorld(food.z()));
+            if (i == 0) {
+                headAura.setTranslateX(x);
+                headAura.setTranslateY(-10);
+                headAura.setTranslateZ(z);
+                movingAccentLight.setTranslateX(x);
+                movingAccentLight.setTranslateZ(z);
+                movingAccentLight.setTranslateY(-55 + Math.cos(t * 4.0) * 8);
+            }
+        }
+    }
 
-        foodGroup.getChildren().addAll(halo, foodOrb, foodLight);
+    /** Places food / bonus orbs over their grid cells (animation handled in the render loop). */
+    private void positionFood() {
+        Cell food = game.food();
+        if (food != null) {
+            double x = toWorld(food.x());
+            double z = toWorld(food.z());
+            foodOrb.setTranslateX(x);
+            foodOrb.setTranslateZ(z);
+            foodHalo.setTranslateX(x);
+            foodHalo.setTranslateY(-16);
+            foodHalo.setTranslateZ(z);
+            foodLight.setTranslateX(x);
+            foodLight.setTranslateZ(z);
+        }
+
+        Cell bonus = game.bonusFood();
+        if (bonus != null) {
+            double x = toWorld(bonus.x());
+            double z = toWorld(bonus.z());
+            bonusOrb.setTranslateX(x);
+            bonusOrb.setTranslateZ(z);
+            bonusHalo.setTranslateX(x);
+            bonusHalo.setTranslateY(-18);
+            bonusHalo.setTranslateZ(z);
+            bonusLight.setTranslateX(x);
+            bonusLight.setTranslateZ(z);
+        }
+    }
+
+    /** A short burst of particles where food was eaten. */
+    private void spawnBurst(double x, double z, String core, String spec) {
+        for (int i = 0; i < 11; i++) {
+            Sphere particle = new Sphere(randomRange(2.5, 4.5));
+            particle.setMaterial(material(core, spec, 80));
+            particle.setTranslateX(x);
+            particle.setTranslateY(-16);
+            particle.setTranslateZ(z);
+            particleGroup.getChildren().add(particle);
+
+            double angle = randomRange(0, Math.PI * 2);
+            double radius = randomRange(28, 64);
+            TranslateTransition move = new TranslateTransition(Duration.millis(520), particle);
+            move.setByX(Math.cos(angle) * radius);
+            move.setByZ(Math.sin(angle) * radius);
+            move.setByY(-randomRange(20, 58));
+            move.setInterpolator(Interpolator.EASE_OUT);
+
+            FadeTransition fade = new FadeTransition(Duration.millis(520), particle);
+            fade.setFromValue(0.95);
+            fade.setToValue(0.0);
+
+            ScaleTransition shrink = new ScaleTransition(Duration.millis(520), particle);
+            shrink.setToX(0.2);
+            shrink.setToY(0.2);
+            shrink.setToZ(0.2);
+
+            ParallelTransition anim = new ParallelTransition(move, fade, shrink);
+            anim.setOnFinished(e -> particleGroup.getChildren().remove(particle));
+            anim.play();
+        }
+    }
+
+    /** Brief camera-relative jolt when the snake crashes. */
+    private void triggerShake() {
+        Timeline shakeTimeline = new Timeline();
+        int frames = 8;
+        double frameMs = 45;
+        for (int i = 0; i <= frames; i++) {
+            double amp = 18 * (1 - i / (double) frames);
+            double sx = i == frames ? 0 : randomRange(-amp, amp);
+            double sz = i == frames ? 0 : randomRange(-amp, amp);
+            shakeTimeline.getKeyFrames().add(new KeyFrame(Duration.millis(frameMs * i),
+                    new KeyValue(shake.xProperty(), sx),
+                    new KeyValue(shake.zProperty(), sz)));
+        }
+        shakeTimeline.play();
     }
 
     private void updateHud() {
-        scoreValue.setText(String.valueOf(score));
+        scoreValue.setText(String.valueOf(game.score()));
         bestValue.setText(String.valueOf(bestScore));
-        speedValue.setText(String.valueOf(Math.max(1, (snake.size() - 1) / 2)));
+        speedValue.setText(String.valueOf(Math.max(1, (game.length() - 1) / 2)));
+        modeValue.setText(game.difficulty().label());
     }
 
     private void updateCenterMessage() {
-        if (!started && !gameOver) {
-            centerTitle.setText("SNAKE 3D");
-            centerSubtitle.setText("SPACE — start  •  WASD / strzałki — ruch  •  P — pauza");
-            centerTitle.setVisible(true);
-            centerSubtitle.setVisible(true);
-            return;
+        switch (game.state()) {
+            case READY -> showCenter("SNAKE 3D",
+                    "SPACE — start  •  WASD / strzałki — ruch  •  P — pauza");
+            case PAUSED -> showCenter("PAUZA", "P — wróć do gry  •  R — restart");
+            case GAME_OVER -> showCenter("GAME OVER",
+                    "Wynik: " + game.score() + "  •  SPACE / R — restart");
+            case WON -> showCenter("WYGRANA!",
+                    "Wypełniłeś arenę! Wynik: " + game.score() + "  •  SPACE / R — restart");
+            case RUNNING -> {
+                centerTitle.setVisible(false);
+                centerSubtitle.setVisible(false);
+            }
         }
+    }
 
-        if (paused) {
-            centerTitle.setText("PAUZA");
-            centerSubtitle.setText("P — wróć do gry  •  R — restart");
-            centerTitle.setVisible(true);
-            centerSubtitle.setVisible(true);
-            return;
-        }
-
-        if (gameOver) {
-            centerTitle.setText("GAME OVER");
-            centerSubtitle.setText("Wynik: " + score + "  •  SPACE / R — restart");
-            centerTitle.setVisible(true);
-            centerSubtitle.setVisible(true);
-            return;
-        }
-
-        centerTitle.setVisible(false);
-        centerSubtitle.setVisible(false);
+    private void showCenter(String title, String subtitle) {
+        centerTitle.setText(title);
+        centerSubtitle.setText(subtitle);
+        centerTitle.setVisible(true);
+        centerSubtitle.setVisible(true);
     }
 
     private Box wall(double w, double h, double d, double x, double y, double z) {
@@ -617,23 +758,28 @@ public class Snake3DApp extends Application {
         return group;
     }
 
+    /** Returns a cached material; materials are immutable once created. */
     private PhongMaterial material(String diffuseHex, String specularHex, double power) {
-        PhongMaterial material = new PhongMaterial();
-        material.setDiffuseColor(Color.web(diffuseHex));
-        material.setSpecularColor(Color.web(specularHex));
-        material.setSpecularPower(power);
-        return material;
+        String key = diffuseHex + '|' + specularHex + '|' + power;
+        return materialCache.computeIfAbsent(key, k -> {
+            PhongMaterial m = new PhongMaterial();
+            m.setDiffuseColor(Color.web(diffuseHex));
+            m.setSpecularColor(Color.web(specularHex));
+            m.setSpecularPower(power);
+            return m;
+        });
     }
 
     private double toWorld(int grid) {
         return (grid - (GRID_SIZE - 1) / 2.0) * TILE;
     }
 
-    private boolean isOpposite(Direction a, Direction b) {
-        return (a == Direction.UP && b == Direction.DOWN)
-                || (a == Direction.DOWN && b == Direction.UP)
-                || (a == Direction.LEFT && b == Direction.RIGHT)
-                || (a == Direction.RIGHT && b == Direction.LEFT);
+    private static double lerp(double a, double b, double alpha) {
+        return a + (b - a) * alpha;
+    }
+
+    private static double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private double randomRange(double min, double max) {
