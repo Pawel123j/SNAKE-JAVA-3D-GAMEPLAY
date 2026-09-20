@@ -19,9 +19,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>It boots the real {@link Snake3DApp}, starts a run and lets the render and
  * game loops churn for a few seconds (the snake runs into a wall, triggering the
- * game-over shake). Any exception on the JavaFX thread fails the test, which
- * guards the rendering / interpolation / particle / shake code from regressions
- * that the pure-logic unit tests can't see.
+ * game-over shake). Any exception on the JavaFX thread fails the test.
+ *
+ * <p><b>What this does and does not cover.</b> It exercises scene construction,
+ * the render and game loops, interpolation, particle and shake bookkeeping, and
+ * the node-graph updates that the pure-logic unit tests never touch — so a null
+ * dereference or a bad cast in that code fails the build.
+ *
+ * <p>It does <b>not</b> verify that anything is actually drawn. Under xvfb
+ * there is no GPU, JavaFX falls back to the software Prism pipeline, and that
+ * pipeline reports {@code System can't support ConditionalFeature.SCENE3D}:
+ * the 3D scene is not rasterised at all. A regression that leaves the board
+ * blank while still updating the node graph would pass this test. Saying so
+ * here is the point — a test whose description promises more than it delivers
+ * is worse than no test.
  */
 @EnabledIfSystemProperty(named = "snake.smoke.headless", matches = "true")
 class SmokeTest {
