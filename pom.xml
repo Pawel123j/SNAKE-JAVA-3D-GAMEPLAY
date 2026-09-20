@@ -31,6 +31,34 @@
             <version>${javafx.version}</version>
         </dependency>
 
+        <!-- Natywne biblioteki JavaFX (prism, glass, font) dla głównych
+             platform desktopowych, żeby JAR z zależnościami uruchamiał się
+             niezależnie od tego, na czym został zbudowany.
+             Uwaga: natywne pliki dla macOS na Intelu i na Apple Silicon mają
+             identyczne nazwy, więc jeden JAR może nieść tylko jeden z tych
+             zestawów — wybrany jest aarch64, czyli dzisiejszy domyślny.
+             Na Intel macOS, ARM Linux i systemach 32-bitowych trzeba
+             uruchamiać przez `mvn javafx:run`, które pobiera pasujące
+             biblioteki samo. -->
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-graphics</artifactId>
+            <version>${javafx.version}</version>
+            <classifier>win</classifier>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-graphics</artifactId>
+            <version>${javafx.version}</version>
+            <classifier>linux</classifier>
+        </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-graphics</artifactId>
+            <version>${javafx.version}</version>
+            <classifier>mac-aarch64</classifier>
+        </dependency>
+
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -67,6 +95,50 @@
                 <configuration>
                     <mainClass>com.pawel.snake3d.Snake3DApp</mainClass>
                 </configuration>
+            </plugin>
+
+            <!-- Buduje samodzielny, klikalny JAR dla głównych platform
+                 (Windows x86-64, Linux x86-64, macOS Apple Silicon):
+                 target/snake-3d-deluxe-1.0.0-shaded.jar
+
+                 Main-Class to Launcher, a nie Snake3DApp: środowisko
+                 uruchomieniowe odmawia startu klasy dziedziczącej po
+                 javafx.application.Application jako Main-Class grubego JAR-a
+                 ("JavaFX runtime components are missing"). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.3</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <shadedClassifierName>shaded</shadedClassifierName>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>com.pawel.snake3d.Launcher</mainClass>
+                                </transformer>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>module-info.class</exclude>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
