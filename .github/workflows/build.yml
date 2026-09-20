@@ -38,3 +38,54 @@ jobs:
 
       - name: Headless smoke test
         run: xvfb-run -a mvn -B test -Dtest=SmokeTest -Dsnake.smoke.headless=true -DfailIfNoTests=false
+
+  jar:
+    name: Samodzielny JAR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Install xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Zbuduj JAR z zależnościami
+        run: mvn -B package -DskipTests
+
+      - name: Sprawdź, czy JAR się uruchamia
+        # Build, którego nikt nie uruchomił, nie jest dowodem na nic — a akurat
+        # w grubym JAR-ze z JavaFX najłatwiej o błąd, który wychodzi dopiero
+        # przy starcie ("JavaFX runtime components are missing", brak
+        # natywnych bibliotek, zły Main-Class).
+        #
+        # `timeout` zwraca 124, gdy musiał ubić DZIAŁAJĄCY proces — i to jest
+        # tutaj wynik pozytywny. Każdy inny kod oznacza, że gra sama się
+        # zamknęła, czyli wystartować się nie udało.
+        run: |
+          set +e
+          timeout 30 xvfb-run -a java -jar target/snake-3d-deluxe-*-shaded.jar > run.log 2>&1
+          code=$?
+          set -e
+          cat run.log
+          if [ "$code" -ne 124 ]; then
+            echo "::error::Gra zakończyła się sama (kod $code) zamiast działać"
+            exit 1
+          fi
+          if grep -qE "Exception|Error:" run.log; then
+            echo "::error::W logu uruchomienia są wyjątki"
+            exit 1
+          fi
+          echo "JAR wystartował i działał przez 30 s bez wyjątków."
+
+      - name: Zachowaj JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: snake-3d-deluxe-jar
+          path: target/*-shaded.jar
+          if-no-files-found: error

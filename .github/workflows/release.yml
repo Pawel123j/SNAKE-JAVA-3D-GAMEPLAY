@@ -1,0 +1,63 @@
+name: Release
+
+# Uruchamiane tagiem: git tag v1.0.0 && git push origin v1.0.0
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Install xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Testy
+        run: mvn -B verify
+
+      - name: Sprawdź, czy JAR się uruchamia
+        # Ta sama weryfikacja co w CI. Wydanie nie może zawierać pliku,
+        # którego nikt nie uruchomił.
+        run: |
+          set +e
+          timeout 30 xvfb-run -a java -jar target/snake-3d-deluxe-*-shaded.jar > run.log 2>&1
+          code=$?
+          set -e
+          cat run.log
+          [ "$code" -eq 124 ] || { echo "::error::Gra zakończyła się sama (kod $code)"; exit 1; }
+          grep -qE "Exception|Error:" run.log && { echo "::error::Wyjątki w logu"; exit 1; }
+          echo "OK"
+
+      - name: Przygotuj pliki wydania
+        run: |
+          mkdir -p upload
+          cp target/snake-3d-deluxe-*-shaded.jar upload/snake-3d-deluxe.jar
+          cd upload
+          sha256sum snake-3d-deluxe.jar > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Opublikuj wydanie
+        # `gh` jest preinstalowane na runnerach, więc wydanie powstaje bez
+        # zewnętrznej akcji — o jedną zależność, której trzeba ufać, mniej.
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "Snake 3D Deluxe ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            upload/snake-3d-deluxe.jar upload/SHA256SUMS.txt
