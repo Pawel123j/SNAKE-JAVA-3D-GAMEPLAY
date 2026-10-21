@@ -31,7 +31,10 @@ public class Leaderboard {
     }
 
     private static Path defaultPath() {
-        return Paths.get(System.getProperty("user.home", "."), ".snake3d", "scores.txt");
+        String directory = System.getProperty("snake.dataDir");
+        return directory == null
+                ? Paths.get(System.getProperty("user.home", "."), ".snake3d", "scores.txt")
+                : Paths.get(directory, "scores.txt");
     }
 
     private void load() {

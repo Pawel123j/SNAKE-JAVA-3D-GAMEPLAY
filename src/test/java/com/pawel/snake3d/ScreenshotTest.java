@@ -60,6 +60,9 @@ class ScreenshotTest {
         CountDownLatch booted = new CountDownLatch(1);
         Platform.startup(() -> {
             try {
+                if (!Platform.isSupported(javafx.application.ConditionalFeature.SCENE3D)) {
+                    throw new IllegalStateException("SCENE3D unavailable: refusing to label a blank 2D overlay as gameplay");
+                }
                 Snake3DApp app = new Snake3DApp();
                 Stage stage = new Stage();
                 app.start(stage);
@@ -72,6 +75,10 @@ class ScreenshotTest {
             }
         });
         assertTrue(booted.await(BOOT_TIMEOUT_SECONDS, TimeUnit.SECONDS), "JavaFX did not start in time");
+        if (error.get() != null) {
+            Platform.exit();
+            throw new AssertionError("Renderer did not provide a real 3D scene", error.get());
+        }
         Scene scene = sceneRef.get();
 
         // 1. Ekran startowy — gra czeka na naciśnięcie klawisza.
@@ -150,6 +157,11 @@ class ScreenshotTest {
 
         try {
             BufferedImage composed = toBufferedImage(worldShot.get());
+            java.util.Set<Integer> colors = new java.util.HashSet<>();
+            for (int y = 0; y < composed.getHeight(); y += 4) {
+                for (int x = 0; x < composed.getWidth(); x += 4) colors.add(composed.getRGB(x, y));
+            }
+            assertTrue(colors.size() > 64, "3D world must contain rendered geometry, not a uniform clear color");
             BufferedImage overlay = toBufferedImage(overlayShot.get());
             java.awt.Graphics2D g = composed.createGraphics();
             g.drawImage(overlay, 0, 0, null);

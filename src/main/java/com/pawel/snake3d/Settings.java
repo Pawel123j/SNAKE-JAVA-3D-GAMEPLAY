@@ -32,7 +32,10 @@ public class Settings {
     }
 
     private static Path defaultPath() {
-        return Paths.get(System.getProperty("user.home", "."), ".snake3d", "settings.properties");
+        String directory = System.getProperty("snake.dataDir");
+        return directory == null
+                ? Paths.get(System.getProperty("user.home", "."), ".snake3d", "settings.properties")
+                : Paths.get(directory, "settings.properties");
     }
 
     private void load() {

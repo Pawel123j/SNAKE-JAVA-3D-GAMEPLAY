@@ -191,3 +191,32 @@ snake-3d-deluxe/
 ## Licencja
 
 MIT — patrz [LICENSE](LICENSE).
+
+## Weryfikacja środowiska — 2026-10-17
+
+`mvn -B verify` z JDK 21: 40 testów PASS, 2 testy GUI pominięte; JAR został zbudowany. To nie potwierdza renderowania sceny 3D ani jakości klatek.
+
+Istniejący workflow uruchamia smoke przez Xvfb. Lokalnie Xvfb nie jest dostępny, a pobranie pakietów z skonfigurowanego snapshotu Debiana było zablokowane. Pozostaje sprawdzenie startu JAR-a, sterowania, pauzy, restartu i zapisu wyników w sesji graficznej. Wydania nie opublikowano. Rollback: poprzedni JAR oraz zachowane pliki ustawień/wyników.
+
+## Walidacja etapu 2 — 2026-10-18
+
+Rzeczywisty test JavaFX SmokeTest uruchomiono pod własnym Xvfb: 1 PASS, bez skip. Wcześniejsze 40 testów logiki i Maven/JAR pozostają dowodem bazowym. Renderer programowy zgłasza brak SCENE3D; sam test sceny/pętli nie dowodzi wyświetlenia geometrii 3D. Do zakończenia potrzeba GPU/środowiska obsługującego JavaFX 3D oraz testów sterowania, ustawień i wyników.
+
+## Etap 3 — 2026-10-21
+
+Status PARTIAL. `mvn verify` przechodzi (40 testów logiki; 2 testy GUI opt-in
+pomijane), powstaje shaded JAR. Osobny SmokeTest pod Xvfb/Prism SW PASS.
+Gotowy JAR rzeczywiście uruchomiono: klawisze 1/B/M zapisują ustawienia,
+Space/P obsługują start/pauzę. To test interfejsu i ustawień, nie renderowania 3D.
+
+ScreenshotTest odrzuca brak `ConditionalFeature.SCENE3D` i jednobarwny obraz
+świata, zanim zapisze go jako zrzut rozgrywki. Próba ES2 z Mesa software nie
+przeszła kwalifikacji renderera (`no suitable pipeline`). Nie wymuszano
+przełączników omijających tę kontrolę. Potrzebny jest rzeczywisty obsługiwany
+renderer 3D; screenshot test należy uruchomić na tej maszynie z
+`-Dprism.order=es2 -Dsnake.screenshots=true -Dtest=ScreenshotTest`.
+
+`-Dsnake.dataDir=/osobny/katalog` izoluje ustawienia, highscore i leaderboard
+bez zmiany katalogu użytkownika. Domyślne ścieżki gracza zachowano.
+Audyt Maven nie został zakończony: źródło advisory api.osv.dev zwraca 403.
+Nie deklarujemy zerowej liczby podatności ani walidacji Windows/macOS.

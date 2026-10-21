@@ -23,7 +23,10 @@ public class HighScoreStore {
     }
 
     private static Path defaultPath() {
-        return Paths.get(System.getProperty("user.home", "."), ".snake3d", "highscore.txt");
+        String directory = System.getProperty("snake.dataDir");
+        return directory == null
+                ? Paths.get(System.getProperty("user.home", "."), ".snake3d", "highscore.txt")
+                : Paths.get(directory, "highscore.txt");
     }
 
     /** @return the stored best score, or 0 if none/unreadable. */
