@@ -48,11 +48,7 @@ public class HighScoreStore {
             return;
         }
         try {
-            Path parent = file.getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
-            Files.writeString(file, Integer.toString(score));
+            AtomicFiles.write(file, Integer.toString(score).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         } catch (IOException e) {
             // Best-effort persistence; ignore failures.
         }

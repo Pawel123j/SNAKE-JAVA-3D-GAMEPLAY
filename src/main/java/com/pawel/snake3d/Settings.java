@@ -2,7 +2,7 @@ package com.pawel.snake3d;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -44,20 +44,23 @@ public class Settings {
         }
         try (InputStream in = Files.newInputStream(file)) {
             properties.load(in);
-        } catch (IOException e) {
+        } catch (IOException | IllegalArgumentException e) {
             properties.clear();
+            // Preserve malformed input for diagnosis before a later save replaces it.
+            if (e instanceof IllegalArgumentException) {
+                try {
+                    Path backup = file.resolveSibling(file.getFileName() + ".corrupt-" + java.util.UUID.randomUUID());
+                    Files.copy(file, backup);
+                } catch (IOException ignored) { /* read-only data directories still start */ }
+            }
         }
     }
 
     private void save() {
         try {
-            Path parent = file.getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
-            try (OutputStream out = Files.newOutputStream(file)) {
-                properties.store(out, "Snake 3D Deluxe settings");
-            }
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            properties.store(out, "Snake 3D Deluxe settings");
+            AtomicFiles.write(file, out.toByteArray());
         } catch (IOException e) {
             // best-effort persistence
         }
@@ -87,7 +90,7 @@ public class Settings {
 
     public boolean isSoundEnabled() {
         String value = properties.getProperty(KEY_SOUND);
-        return value == null || Boolean.parseBoolean(value);
+        return value == null || !value.equalsIgnoreCase("false");
     }
 
     public void setSoundEnabled(boolean enabled) {
