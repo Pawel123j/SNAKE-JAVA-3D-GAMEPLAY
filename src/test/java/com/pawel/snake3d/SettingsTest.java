@@ -6,6 +6,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -49,5 +50,20 @@ class SettingsTest {
         Settings settings = new Settings(file());
         assertEquals(Difficulty.NORMAL, settings.difficulty());
         assertEquals(GameMode.CLASSIC, settings.mode());
+    }
+
+    @Test
+    void malformedUnicodeFallsBackAndPreservesInputForDiagnosis() throws IOException {
+        Files.createDirectories(file().getParent());
+        Files.writeString(file(), "difficulty=\\uZZZZ\nmode=WRAP\n");
+
+        Settings settings = new Settings(file());
+
+        assertEquals(Difficulty.NORMAL, settings.difficulty());
+        assertEquals(GameMode.CLASSIC, settings.mode());
+        try (Stream<Path> paths = Files.list(tempDir)) {
+            assertTrue(paths.anyMatch(path -> path.getFileName().toString()
+                    .startsWith("settings.properties.corrupt-")));
+        }
     }
 }

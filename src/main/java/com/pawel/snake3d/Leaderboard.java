@@ -57,15 +57,11 @@ public class Leaderboard {
 
     private void save() {
         try {
-            Path parent = file.getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
             List<String> lines = new ArrayList<>(scores.size());
             for (int score : scores) {
                 lines.add(Integer.toString(score));
             }
-            Files.write(file, lines);
+            AtomicFiles.write(file, String.join(System.lineSeparator(), lines).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         } catch (IOException e) {
             // best-effort persistence
         }
