@@ -478,6 +478,9 @@ public class Snake3DApp extends Application {
 
     private void syncLoopWithState() {
         if (game.state() == GameState.RUNNING) {
+            if (gameLoop.getCycleDuration().toMillis() != game.tickMs()) {
+                rebuildGameLoop();
+            }
             gameLoop.play();
         } else {
             gameLoop.pause();
