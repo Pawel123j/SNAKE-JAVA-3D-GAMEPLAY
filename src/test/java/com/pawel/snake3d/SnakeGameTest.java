@@ -145,25 +145,29 @@ class SnakeGameTest {
     }
 
     @Test
-    void fillingTheBoardWinsAndDoesNotHang() {
-        // 4x4 board; snake occupies every cell except (3,3), with food there.
+    void eatingTheLastTwoCellsWinsOnlyOnTheSecondApple() {
         SnakeGame game = new SnakeGame(4, new Random(0));
-        List<Cell> body = new ArrayList<>();
-        body.add(new Cell(3, 2)); // head, will move DOWN into (3,3)
-        for (int x = 0; x < 4; x++) {
-            for (int z = 0; z < 4; z++) {
-                Cell c = new Cell(x, z);
-                if (!c.equals(new Cell(3, 2)) && !c.equals(new Cell(3, 3))) {
-                    body.add(c);
-                }
-            }
-        }
-        game.loadState(body, Direction.DOWN, new Cell(3, 3), GameState.RUNNING);
+        // The head faces the two empty squares in the top row.
+        List<Cell> body = List.of(
+                new Cell(2, 0), new Cell(3, 0),
+                new Cell(3, 1), new Cell(2, 1), new Cell(1, 1), new Cell(0, 1),
+                new Cell(0, 2), new Cell(1, 2), new Cell(2, 2), new Cell(3, 2),
+                new Cell(3, 3), new Cell(2, 3), new Cell(1, 3), new Cell(0, 3));
+        game.loadState(body, Direction.LEFT, new Cell(1, 0), GameState.RUNNING);
+
+        assertEquals(SnakeGame.StepResult.ATE, game.step());
+        assertEquals(GameState.RUNNING, game.state());
+        assertEquals(15, game.length());
+        assertEquals(10, game.score());
+        assertEquals(new Cell(0, 0), game.food());
 
         assertEquals(SnakeGame.StepResult.WON, game.step());
         assertEquals(GameState.WON, game.state());
         assertNull(game.food());
         assertEquals(16, game.length());
+        assertEquals(30, game.score()); // the second consecutive apple earns 20
+        assertEquals(SnakeGame.StepResult.IGNORED, game.step());
+        assertEquals(30, game.score());
     }
 
     @Test
