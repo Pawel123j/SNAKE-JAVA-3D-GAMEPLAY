@@ -1,6 +1,8 @@
 package com.pawel.snake3d;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -174,6 +176,21 @@ class SnakeGameTest {
 
         game.setDifficulty(Difficulty.HARD);
         assertTrue(game.tickMs() < atStart, "HARD should tick faster than NORMAL");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"EASY, 260, 3", "HARD, 165, 5"})
+    void startingPaceAdvancesTheExpectedNumberOfCells(Difficulty level, int periodMs, int expectedSteps) {
+        SnakeGame game = new SnakeGame(18, new Random(0), (free, random) -> new Cell(0, 0));
+        game.setDifficulty(level);
+        game.start();
+        Cell start = game.head();
+        assertEquals((double) periodMs, game.tickMs());
+
+        for (double due = game.tickMs(); due <= 900; due += game.tickMs()) {
+            assertEquals(SnakeGame.StepResult.MOVED, game.step());
+        }
+        assertEquals(new Cell(start.x() + expectedSteps, start.z()), game.head());
     }
 
     @Test

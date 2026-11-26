@@ -36,6 +36,9 @@ the screenshot test to accept an image as gameplay.
 | `B` | Cycle board mode |
 | `M` | Toggle sound |
 
+Choose a difficulty with `1`, `2`, or `3` while paused. The new speed takes
+effect when you press `P` to resume.
+
 Classic mode ends at a wall. Wrap mode connects opposite edges. Obstacles mode
 adds fixed pylons. A regular food grows the snake and earns combo-scaled points;
 the golden bonus adds points without growth.
