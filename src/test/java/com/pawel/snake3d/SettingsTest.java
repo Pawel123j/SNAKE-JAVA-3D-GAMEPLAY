@@ -2,6 +2,8 @@ package com.pawel.snake3d;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -27,6 +29,20 @@ class SettingsTest {
         assertEquals(Difficulty.NORMAL, settings.difficulty());
         assertEquals(GameMode.CLASSIC, settings.mode());
         assertTrue(settings.isSoundEnabled());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"'', CLASSIC", "mode=WRAP, WRAP"})
+    void loadsOlderSettingsWithOrWithoutABoardMode(String modeLine, GameMode expectedMode) throws IOException {
+        // The original writer saved only preferences the player had set.
+        String original = "difficulty=HARD\nsound=false\n" + modeLine;
+        Files.writeString(file(), original);
+
+        Settings settings = new Settings(file());
+        assertEquals(Difficulty.HARD, settings.difficulty());
+        assertEquals(expectedMode, settings.mode());
+        assertFalse(settings.isSoundEnabled());
+        assertEquals(original, Files.readString(file()));
     }
 
     @Test
