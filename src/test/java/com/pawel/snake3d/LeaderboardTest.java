@@ -43,6 +43,24 @@ class LeaderboardTest {
     }
 
     @Test
+    void tieAtTheCutoffQualifiesOnlyWhileThereIsRoom() {
+        Leaderboard board = new Leaderboard(file());
+        for (int score : List.of(50, 40, 30, 20)) {
+            board.submit(score);
+        }
+
+        List<Integer> expected = List.of(50, 40, 30, 20, 20);
+        assertTrue(board.submit(20));
+        assertEquals(expected, board.top());
+
+        Leaderboard reloaded = new Leaderboard(file());
+        assertEquals(expected, reloaded.top());
+        assertFalse(reloaded.submit(20));
+        assertEquals(expected, reloaded.top());
+        assertEquals(expected, new Leaderboard(file()).top());
+    }
+
+    @Test
     void persistsAcrossInstances() {
         Leaderboard first = new Leaderboard(file());
         first.submit(120);
